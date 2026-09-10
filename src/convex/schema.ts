@@ -32,12 +32,21 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // add other tables here
-
-    // tableName: defineTable({
-    //   ...
-    //   // table fields
-    // }).index("by_field", ["field"])
+    // Course summaries, one per course session (v1 of the app).
+    lessons: defineTable({
+      subjectKey: v.string(), // key from src/lib/subjects.ts
+      date: v.string(), // course date, "YYYY-MM-DD"
+      title: v.string(),
+      summary: v.string(),
+      keyPoints: v.array(v.string()),
+      notes: v.optional(v.string()), // raw dictaphone notes
+      status: v.union(v.literal("draft"), v.literal("published")),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_subject_date", ["subjectKey", "date"])
+      .index("by_status", ["status"]),
   },
   {
     schemaValidation: false,

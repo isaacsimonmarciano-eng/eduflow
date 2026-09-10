@@ -66,7 +66,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       setError(
         error instanceof Error
           ? error.message
-          : "Failed to send verification code. Please try again.",
+          : "Impossible d'envoyer le code. Réessaie.",
       );
       setIsLoading(false);
     }
@@ -86,7 +86,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("OTP verification error:", error);
 
-      setError("The verification code you entered is incorrect.");
+      setError("Le code saisi est incorrect.");
       setIsLoading(false);
 
       setOtp("");
@@ -104,7 +104,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("Guest login error:", error);
       console.error("Error details:", JSON.stringify(error, null, 2));
-      setError(`Failed to sign in as guest: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`Connexion invité impossible : ${error instanceof Error ? error.message : 'erreur inconnue'}`);
       setIsLoading(false);
     }
   };
@@ -116,7 +116,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       {/* Auth Content */}
       <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center justify-center h-full flex-col">
-        <Card className="min-w-[350px] pb-0 border shadow-md">
+        <Card className="min-w-[350px] rounded-3xl border pb-0 shadow-md">
           {step === "signIn" ? (
             <>
               <CardHeader className="text-center">
@@ -130,9 +130,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       onClick={() => navigate("/")}
                     />
                   </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
+                <CardTitle className="text-xl">Bienvenue !</CardTitle>
                 <CardDescription>
-                  Enter your email to log in or sign up
+                  Entre ton email pour te connecter ou créer ton accès
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
@@ -187,7 +187,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       disabled={isLoading}
                     >
                       <UserX className="mr-2 h-4 w-4" />
-                      Continue as Guest
+                      Continuer en invité
                     </Button>
                   </div>
                 </CardContent>
@@ -196,9 +196,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           ) : (
             <>
               <CardHeader className="text-center mt-4">
-                <CardTitle>Check your email</CardTitle>
+                <CardTitle>Vérifie ta boîte mail</CardTitle>
                 <CardDescription>
-                  We've sent a code to {step.email}
+                  On t'a envoyé un code à {step.email}
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleOtpSubmit}>
@@ -235,13 +235,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     </p>
                   )}
                   <p className="text-sm text-muted-foreground text-center mt-4">
-                    Didn't receive a code?{" "}
+                    Code non reçu ?{" "}
                     <Button
                       variant="link"
                       className="p-0 h-auto"
                       onClick={() => setStep("signIn")}
                     >
-                      Try again
+                      Essaie encore
                     </Button>
                   </p>
                 </CardContent>
@@ -254,11 +254,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
+                        Vérification…
                       </>
                     ) : (
                       <>
-                        Verify code
+                        Vérifier le code
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </>
                     )}
@@ -269,16 +269,15 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     onClick={() => setStep("signIn")}
                     disabled={isLoading}
                     className="w-full"
-                  >
-                    Use different email
-                  </Button>
+                  >                      Utiliser un autre email
+                    </Button>
                 </CardFooter>
               </form>
             </>
           )}
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
+            Sécurisé par{" "}
             <a
               href="https://freebuff.com"
               target="_blank"
