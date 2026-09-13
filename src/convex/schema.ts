@@ -70,6 +70,24 @@ const schema = defineSchema(
       createdBy: v.id("users"),
       createdAt: v.number(),
     }).index("by_due_date", ["dueDate"]),
+
+    // One-time login nonces: our EcoleDirecte verification actions create a
+    // nonce after a successful verification, and the Convex Auth credentials
+    // provider consumes it to open the session. Short-lived, single use.
+    loginNonces: defineTable({
+      nonce: v.string(),
+      edUserId: v.string(), // EcoleDirecte user id the nonce is bound to
+      expiresAt: v.number(),
+    }).index("by_nonce", ["nonce"]),
+
+    // Pending double-auth session state (EcoleDirecte cookies between the
+    // question being shown and the answer being submitted). Short-lived.
+    pendingLogins: defineTable({
+      handle: v.string(), // random handle handed to the client
+      cookiesJson: v.string(),
+      xGtk: v.optional(v.string()),
+      expiresAt: v.number(),
+    }).index("by_handle", ["handle"]),
   },
   {
     schemaValidation: false,

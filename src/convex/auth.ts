@@ -2,65 +2,42 @@
 
 import { convexAuth } from "@convex-dev/auth/server";
 import { ConvexCredentials } from "@convex-dev/auth/providers/ConvexCredentials";
-import { ecoleDirecteLogin } from "./auth/ecoleDirecte";
-import { api } from "./_generated/api";
+import { internal } from "./_generated/api";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     ConvexCredentials({
       id: "ecoledirecte",
       authorize: async (credentials, ctx) => {
-        const identifiant =
-          typeof credentials.identifiant === "string"
-            ? credentials.identifiant.trim()
-            : "";
-        const motdepasse =
-          typeof credentials.motdepasse === "string"
-            ? credentials.motdepasse
-            : "";
-        if (!identifiant || !motdepasse) {
-          throw new Error("Entre ton identifiant et ton mot de passe EcoleDirecte.");
+        const nonce =
+          typeof credentials.nonce === "string" ? credentials.nonce : "";
+        if (!nonce) {
+          throw new Error(
+            "Connexion invalide. Passe par le formulaire de connexion.",
+          );
         }
 
-        // Real verification against EcoleDirecte (unofficial API).
-        const result = await ecoleDirecteLogin(identifiant, motdepasse);
-        if (!result.ok) {
-          throw new Error(result.message);
+        // The nonce was minted by authEd.prepareSignIn only after a real,
+        // successful EcoleDirecte verification. Consume it (one-time use).
+        const { edUserId } = (await ctx.runMutation(internal.authEd.consumeNonce, {
+          nonce,
+        })) as { edUserId: string | null };
+        if (!edUserId) {
+          throw new Error(
+            "Session de connexion expirée. Reprends la connexion depuis le début.",
+          );
         }
 
-        // Find or create the app user keyed by the stable EcoleDirecte id.
-        const existing = await ctx.runQuery(api.users.byEdUserId, {
-          edUserId: result.profile.edUserId,
-        });
-        if (existing) {
-          // Keep name / class info fresh on each sign-in.
-          const name = fullName(result.profile);
-          if (existing.className !== result.profile.className || existing.name !== name) {
-            await ctx.runMutation(api.users.syncFromClass, {
-              userId: existing._id,
-              className: result.profile.className,
-              name,
-            });
-          }
-          return { userId: existing._id };
+        const user = (await ctx.runQuery(api.users.byEdUserId, {
+          edUserId,
+        })) as { _id: unknown } | null;
+        if (!user) {
+          throw new Error("Compte introuvable. Reconnecte-toi.");
         }
-
-        // First sign-in for this student: create the account.
-        const isFirstOfClass = await ctx.runQuery(api.users.isFirstInClass, {
-          className: result.profile.className,
-        });
-        const userId = await ctx.runMutation(api.users.createFromEd, {
-          edUserId: result.profile.edUserId,
-          name: fullName(result.profile),
-          className: result.profile.className,
-          classRole: isFirstOfClass ? "delegue" : "eleve",
-        });
-        return { userId };
+        return { userId: user._id as never };
       },
     }),
   ],
 });
 
-function fullName(profile: { firstName: string; lastName: string }): string {
-  return `${profile.firstName} ${profile.lastName}`.trim();
-}
+import { api } from "./_generated/api";
