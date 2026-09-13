@@ -4,6 +4,7 @@ import { SUBJECTS } from "@/lib/subjects";
 import {
   ArrowRight,
   BookOpenCheck,
+  ListTodo,
   Mic,
   PenLine,
   Sparkles,
@@ -121,6 +122,10 @@ export default function Landing() {
                 <PenLine className="size-4 text-teal-600" />
                 Résumés vérifiés avant publication
               </span>
+              <span className="inline-flex items-center gap-1.5">
+                <ListTodo className="size-4 text-amber-600" />
+                Le récap des devoirs inclus
+              </span>
             </div>
           </motion.div>
 
@@ -184,6 +189,58 @@ export default function Landing() {
             </div>
           </motion.div>
         </div>
+      </section>
+
+      {/* Homework recap teaser */}
+      <section className="mx-auto w-full max-w-6xl px-4 pb-16 sm:px-6 sm:pb-20">
+        <motion.div {...fadeUp} transition={{ duration: 0.45 }} className="pop-card overflow-hidden">
+          <div className="grid items-center gap-0 lg:grid-cols-2">
+            <div className="p-6 sm:p-10">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+                📋 Nouveau · Le récap des devoirs
+              </span>
+              <h2 className="mt-4 font-display text-3xl font-bold tracking-tight">
+                Plus un seul devoir oublié
+              </h2>
+              <p className="mt-3 max-w-md text-muted-foreground">
+                Chaque devoir est noté avec son emoji, sa matière et sa date. Coche
+                quand c'est fait, et vois qui de la classe l'a déjà bouclé.
+              </p>
+              <div className="mt-6 space-y-2.5">
+                {[
+                  { emoji: "📐", text: "Maths · exercices 12 à 15 p. 84", done: true, soft: "#eef2ff" },
+                  { emoji: "📖", text: "Français · lire le chapitre 5", done: false, soft: "#fff1f2" },
+                  { emoji: "🧪", text: "Physique · le compte-rendu de TP", done: false, soft: "#fff7ed" },
+                ].map((item, i) => (
+                  <motion.div
+                    key={item.text}
+                    initial={{ opacity: 0, x: -16 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.12, duration: 0.35 }}
+                    className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3.5 shadow-sm"
+                  >
+                    <span
+                      className="flex size-9 shrink-0 items-center justify-center rounded-xl text-base shadow-sm"
+                      style={{ backgroundColor: item.soft }}
+                    >
+                      {item.done ? "✅" : item.emoji}
+                    </span>
+                    <span className={`flex-1 text-sm font-bold ${item.done ? "line-through text-muted-foreground" : ""}`}>
+                      {item.text}
+                    </span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${item.done ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                      {item.done ? "fait" : "à faire"}
+                    </span>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+            <div className="dot-grid hidden h-full items-center justify-center bg-muted/40 p-10 lg:flex">
+              <div className="animate-float-y text-7xl">🗂️</div>
+            </div>
+      </div>
+        </motion.div>
       </section>
 
       {/* How it works */}

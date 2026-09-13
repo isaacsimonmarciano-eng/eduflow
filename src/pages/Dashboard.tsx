@@ -2,6 +2,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SUBJECTS, subjectOf } from "@/lib/subjects";
+import { todayISO, formatDateFR } from "@/lib/dates";
+import Devoirs, { type Homework } from "@/components/Devoirs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   BookOpen,
   CalendarDays,
+  ClipboardList,
   Loader2,
   LogOut,
   Mic,
@@ -47,23 +50,6 @@ type Lesson = {
   canEdit: boolean;
 };
 
-function todayISO(): string {
-  const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, "0");
-  const day = `${d.getDate()}`.padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-function formatDateFR(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(y, m - 1, d).toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-}
-
 const WEEK_STEPS = [
   "Écris ce que tu as retenu du cours, même en vrac",
   "L'IA rédige un résumé propre",
@@ -74,12 +60,17 @@ export default function Dashboard() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const lessons = useQuery(api.lessons.listAll, {}) as Lesson[] | undefined;
+  const homework = useQuery(api.homework.list, {}) as Homework[] | undefined;
   const saveLesson = useMutation(api.lessons.save);
   const publishLesson = useMutation(api.lessons.publish);
   const removeLesson = useMutation(api.lessons.remove);
+  const addHomework = useMutation(api.homework.add);
+  const toggleHomework = useMutation(api.homework.toggleDone);
+  const removeHomework = useMutation(api.homework.remove);
   const summarizeNotes = useAction(api.ai.summarizeNotes);
 
   const [selected, setSelected] = useState<string>(SUBJECTS[0].key);
+  const [view, setView] = useState<"cours" | "devoirs">("cours");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"lessons"> | null>(null);
   const [form, setForm] = useState({
@@ -217,6 +208,32 @@ export default function Dashboard() {
     navigate("/");
   };
 
+  const handleAddHomework = async (data: {
+    subjectKey: string;
+    dueDate: string;
+    text: string;
+    emoji: string;
+  }) => {
+    await addHomework(data);
+  };
+
+  const handleToggleHomework = async (id: Id<"homework">) => {
+    try {
+      await toggleHomework({ id });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Une erreur est survenue.");
+    }
+  };
+
+  const handleRemoveHomework = async (id: Id<"homework">) => {
+    try {
+      await removeHomework({ id });
+      toast.success("Devoir supprimé.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Une erreur est survenue.");
+    }
+  };
+
   const current = subjectOf(selected);
   const subjectLessons = bySubject.get(selected) ?? [];
 
@@ -237,11 +254,13 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={openNew} className="gap-2 rounded-full font-bold shadow-sm">
-              <Plus className="size-4" />
-              <span className="hidden sm:inline">Nouveau résumé</span>
-              <span className="sm:hidden">Ajouter</span>
-            </Button>
+            {view === "cours" && (
+              <Button onClick={openNew} className="gap-2 rounded-full font-bold shadow-sm">
+                <Plus className="size-4" />
+                <span className="hidden sm:inline">Nouveau résumé</span>
+                <span className="sm:hidden">Ajouter</span>
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -256,6 +275,43 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-8 sm:px-6">
+        {/* View switcher: Cours / Devoirs */}
+        <div className="mb-6 inline-flex rounded-full border border-border bg-card p-1 shadow-sm">
+          {([
+            { key: "cours", label: "Les cours", icon: BookOpen },
+            { key: "devoirs", label: "Les devoirs", icon: ClipboardList },
+          ] as const).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={`relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors ${
+                view === key ? "text-primary-foreground" : "text-foreground/70 hover:text-foreground"
+              }`}
+            >
+              {view === key && (
+                <motion.span
+                  layoutId="view-pill"
+                  className="absolute inset-0 rounded-full bg-primary shadow-sm"
+                  transition={{ type: "spring", stiffness: 400, damping: 32 }}
+                />
+              )}
+              <span className="relative z-10 flex items-center gap-2">
+                <Icon className="size-4" />
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {view === "devoirs" ? (
+          <Devoirs
+            homework={homework}
+            onAdd={handleAddHomework}
+            onToggle={handleToggleHomework}
+            onRemove={handleRemoveHomework}
+          />
+        ) : (
+        <>
         {/* Subject rail */}
         <section aria-label="Matières">
           <div className="mb-4 flex items-center justify-between">
@@ -487,6 +543,8 @@ export default function Dashboard() {
             </ol>
           </div>
         </section>
+        </>
+        )}
       </main>
 
       {/* Editor dialog */}

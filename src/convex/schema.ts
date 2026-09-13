@@ -47,6 +47,17 @@ const schema = defineSchema(
     })
       .index("by_subject_date", ["subjectKey", "date"])
       .index("by_status", ["status"]),
+
+    // Homework entries, one per assignment (due date + subject).
+    homework: defineTable({
+      subjectKey: v.string(), // key from src/lib/subjects.ts
+      dueDate: v.string(), // due date, "YYYY-MM-DD"
+      text: v.string(),
+      emoji: v.string(),
+      doneBy: v.array(v.id("users")),
+      createdBy: v.id("users"),
+      createdAt: v.number(),
+    }).index("by_due_date", ["dueDate"]),
   },
   {
     schemaValidation: false,
