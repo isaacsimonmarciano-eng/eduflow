@@ -548,7 +548,27 @@ export default function Dashboard() {
               />
             </div>
 
-            {!editingId && (
+            {editingId ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleGenerate()}
+                disabled={generating}
+                className="gap-2 rounded-full font-bold"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    L'IA rédige le résumé…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-4" />
+                    Regénérer avec l'IA (remplace titre, résumé et points)
+                  </>
+                )}
+              </Button>
+            ) : (
               <Button
                 type="button"
                 onClick={() => void handleGenerate()}
