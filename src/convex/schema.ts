@@ -30,7 +30,17 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
-    }).index("email", ["email"]), // index for the email. do not remove or modify
+
+      // EcoleDirecte identity (sign-in via the unofficial login API).
+      edUserId: v.optional(v.string()), // stable EcoleDirecte student id
+      className: v.optional(v.string()), // e.g. "3ème B"
+      classRole: v.optional(
+        v.union(v.literal("eleve"), v.literal("delegue")),
+      ),
+    })
+      .index("email", ["email"]) // index for the email. do not remove or modify
+      .index("edUserId", ["edUserId"])
+      .index("by_class", ["className"]),
 
     // Course summaries, one per course session (v1 of the app).
     lessons: defineTable({
@@ -41,6 +51,7 @@ const schema = defineSchema(
       keyPoints: v.array(v.string()),
       notes: v.optional(v.string()), // raw dictaphone notes
       status: v.union(v.literal("draft"), v.literal("published")),
+      className: v.optional(v.string()), // class this summary belongs to
       createdBy: v.id("users"),
       createdAt: v.number(),
       updatedAt: v.number(),
@@ -54,6 +65,7 @@ const schema = defineSchema(
       dueDate: v.string(), // due date, "YYYY-MM-DD"
       text: v.string(),
       emoji: v.string(),
+      className: v.optional(v.string()), // class this homework belongs to
       doneBy: v.array(v.id("users")),
       createdBy: v.id("users"),
       createdAt: v.number(),

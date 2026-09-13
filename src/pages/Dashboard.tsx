@@ -30,6 +30,7 @@ import {
   Sparkles,
   Trash2,
   UserRound,
+  Users,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -61,6 +62,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const lessons = useQuery(api.lessons.listAll, {}) as Lesson[] | undefined;
   const homework = useQuery(api.homework.list, {}) as Homework[] | undefined;
+  const classmates = useQuery(api.users.listClassmates, {});
   const saveLesson = useMutation(api.lessons.save);
   const publishLesson = useMutation(api.lessons.publish);
   const removeLesson = useMutation(api.lessons.remove);
@@ -70,7 +72,7 @@ export default function Dashboard() {
   const summarizeNotes = useAction(api.ai.summarizeNotes);
 
   const [selected, setSelected] = useState<string>(SUBJECTS[0].key);
-  const [view, setView] = useState<"cours" | "devoirs">("cours");
+  const [view, setView] = useState<"cours" | "devoirs" | "classe">("cours");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"lessons"> | null>(null);
   const [form, setForm] = useState({
@@ -247,7 +249,15 @@ export default function Dashboard() {
               🎒
             </div>
             <div className="leading-tight">
-              <p className="font-display text-lg font-bold">Cartable Vivant</p>
+              <div className="flex items-center gap-2">
+                <p className="font-display text-lg font-bold">Cartable Vivant</p>
+                {user?.className && (
+                  <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-extrabold text-emerald-700">
+                    {user.classRole === "delegue" ? "⭐ Délégué · " : "🎓 "}
+                    {user.className}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Salut{user?.name ? ` ${user.name}` : ""} — on est au bon endroit ✨
               </p>
@@ -275,11 +285,12 @@ export default function Dashboard() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 pb-24 pt-8 sm:px-6">
-        {/* View switcher: Cours / Devoirs */}
-        <div className="mb-6 inline-flex rounded-full border border-border bg-card p-1 shadow-sm">
+        {/* View switcher: Cours / Devoirs / Classe */}
+        <div className="mb-6 inline-flex flex-wrap rounded-full border border-border bg-card p-1 shadow-sm">
           {([
             { key: "cours", label: "Les cours", icon: BookOpen },
             { key: "devoirs", label: "Les devoirs", icon: ClipboardList },
+            { key: "classe", label: "Ma classe", icon: Users },
           ] as const).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -309,6 +320,12 @@ export default function Dashboard() {
             onAdd={handleAddHomework}
             onToggle={handleToggleHomework}
             onRemove={handleRemoveHomework}
+          />
+        ) : view === "classe" ? (
+          <MaClasse
+            classmates={classmates}
+            className={user?.className ?? undefined}
+            myRole={user?.classRole ?? "eleve"}
           />
         ) : (
         <>
@@ -719,5 +736,114 @@ function EmptySubject({ label, onNew }: { label: string; onNew: () => void }) {
         Résumer le premier cours
       </Button>
     </div>
+  );
+}
+
+type Classmate = {
+  _id: string;
+  name: string;
+  classRole: "eleve" | "delegue";
+  isMe: boolean;
+};
+
+function MaClasse({
+  classmates,
+  className,
+  myRole,
+}: {
+  classmates: Classmate[] | undefined;
+  className?: string;
+  myRole: "eleve" | "delegue";
+}) {
+  return (
+    <section aria-label="Ma classe">
+      <div className="dot-grid pop-card flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="animate-float-y flex size-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl shadow-sm">
+            🎓
+          </div>
+          <div>
+            <h2 className="font-display text-xl font-bold">
+              Ma classe{className ? ` · ${className}` : ""}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {classmates === undefined
+                ? "…"
+                : `${classmates.length} élève${classmates.length > 1 ? "s" : ""} connecté${classmates.length > 1 ? "s" : ""} dans l'espace de la classe`}
+            </p>
+          </div>
+        </div>
+        {myRole === "delegue" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3.5 py-1.5 text-xs font-bold text-amber-800 shadow-sm">
+            ⭐ Tu es le délégué — tes publications sont visibles par toute la classe
+          </span>
+        )}
+      </div>
+
+      {classmates === undefined ? (
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="pop-card h-20 animate-pulse" />
+          ))}
+        </div>
+      ) : classmates.length === 0 ? (
+        <div className="dot-grid pop-card mt-5 flex flex-col items-center justify-center px-6 py-14 text-center">
+          <div className="animate-float-y text-5xl">🫂</div>
+          <h3 className="mt-4 font-display text-lg font-bold">
+            Tu es le premier de ta classe !
+          </h3>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Partage le site avec tes camarades : dès qu'ils se connectent avec
+            leur compte EcoleDirecte, ils apparaissent ici et rejoignent
+            l'espace de la classe.
+          </p>
+        </div>
+      ) : (
+        <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {classmates.map((m) => (
+            <motion.li
+              key={m._id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <div
+                className={`pop-card pop-card-hover flex items-center gap-3.5 p-4 ${
+                  m.isMe ? "ring-2 ring-primary/40" : ""
+                }`}
+              >
+                <span
+                  className={`flex size-11 shrink-0 items-center justify-center rounded-2xl text-lg font-black text-white shadow-sm ${
+                    m.classRole === "delegue" ? "bg-amber-500" : "bg-primary"
+                  }`}
+                >
+                  {m.name
+                    .split(" ")
+                    .map((w) => w[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase()}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate font-display text-sm font-bold">
+                    {m.name}
+                    {m.isMe && (
+                      <span className="ml-1.5 text-xs font-bold text-primary">· toi</span>
+                    )}
+                  </p>
+                  <p
+                    className={`text-xs font-bold ${
+                      m.classRole === "delegue" ? "text-amber-600" : "text-muted-foreground"
+                    }`}
+                  >
+                    {m.classRole === "delegue" ? "⭐ Délégué de la classe" : "🎓 Élève"}
+                  </p>
+                </div>
+              </div>
+            </motion.li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

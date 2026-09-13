@@ -11,6 +11,9 @@ export const list = query({
     const viewerId = await getAuthUserId(ctx);
     if (viewerId === null) return [];
 
+    const viewer = await ctx.db.get(viewerId);
+    const className = viewer?.className;
+
     const today = new Date();
     const todayStr = [
       today.getFullYear(),
@@ -18,10 +21,12 @@ export const list = query({
       `${today.getDate()}`.padStart(2, "0"),
     ].join("-");
 
-    const rows = await ctx.db
-      .query("homework")
-      .withIndex("by_due_date", (q) => q.gte("dueDate", todayStr))
-      .collect();
+    const rows = (
+      await ctx.db
+        .query("homework")
+        .withIndex("by_due_date", (q) => q.gte("dueDate", todayStr))
+        .collect()
+    ).filter((h) => h.className === className);
 
     rows.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.createdAt - b.createdAt));
 
@@ -57,11 +62,14 @@ export const add = mutation({
     const text = args.text.trim().slice(0, 300);
     if (!text) throw new Error("Écris d'abord le devoir.");
 
+    const author = await ctx.db.get(userId);
+
     return ctx.db.insert("homework", {
       subjectKey: args.subjectKey,
       dueDate: args.dueDate,
       text,
       emoji: args.emoji.slice(0, 8) || "📝",
+      className: author?.className,
       doneBy: [],
       createdBy: userId,
       createdAt: Date.now(),

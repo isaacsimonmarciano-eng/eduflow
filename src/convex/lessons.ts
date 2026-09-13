@@ -3,15 +3,21 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
-/** All lessons visible to the current user: published ones for everyone,
- *  drafts only for their author. Sorted by date (newest first). */
+/** All lessons visible to the current user, scoped to their class:
+ *  published ones for everyone in the class, drafts only for their author.
+ *  Sorted by date (newest first). */
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
     const viewerId = await getAuthUserId(ctx);
+    const viewer =
+      viewerId !== null ? await ctx.db.get(viewerId) : null;
+    const className = viewer?.className;
+
     const rows = await ctx.db.query("lessons").collect();
 
     const visible = rows
+      .filter((l) => l.className === className)
       .filter(
         (l) =>
           l.status === "published" ||
@@ -68,6 +74,7 @@ export const save = mutation({
       throw new Error("Date du cours invalide.");
     }
 
+    const author = await ctx.db.get(userId);
     const fields = {
       subjectKey: args.subjectKey,
       date: args.date,
@@ -78,6 +85,7 @@ export const save = mutation({
         .filter(Boolean)
         .slice(0, 8),
       notes: args.notes?.trim() ? args.notes.trim().slice(0, 2000) : undefined,
+      className: author?.className,
     };
 
     const now = Date.now();

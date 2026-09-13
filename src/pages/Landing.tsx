@@ -77,7 +77,7 @@ export default function Landing() {
             transition={{ duration: 0.5 }}
           >
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-bold text-foreground/80 shadow-sm">
-              ✨ Fait par les délégués, pour les élèves
+              🎓 Connexion avec EcoleDirecte — fait par les délégués, pour les élèves
             </span>
             <h1 className="mt-5 font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl lg:text-[3.4rem]">
               Les cours,{" "}
@@ -96,16 +96,16 @@ export default function Landing() {
               prêt pour les révisions.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
-              <Button
-                asChild
-                size="lg"
-                className="rounded-full font-bold shadow-md"
-              >
-                <Link to="/auth">
-                  Essayer avec ma classe
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
+            <Button
+              asChild
+              size="lg"
+              className="rounded-full font-bold shadow-md"
+            >
+              <Link to="/auth">
+                Se connecter avec EcoleDirecte
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
               <a
                 href="#comment"
                 className="inline-flex h-11 items-center rounded-full border border-border bg-card px-6 text-sm font-bold text-foreground/85 shadow-sm transition-colors hover:bg-accent"
@@ -116,7 +116,7 @@ export default function Landing() {
             <div className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <Users className="size-4 text-primary" />
-                Pensé pour les élèves
+                Réservé à ta classe
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <PenLine className="size-4 text-teal-600" />
@@ -324,8 +324,8 @@ export default function Landing() {
               Prêt à ouvrir le cartable de ta classe ?
             </h2>
             <p className="mx-auto mt-3 max-w-lg text-primary-foreground/85">
-              Crée ton accès en quelques secondes et publie ton premier résumé
-              dès le prochain cours.
+              Connecte-toi avec ton compte EcoleDirecte et publie ton premier
+              résumé dès le prochain cours.
             </p>
             <Button
               asChild
