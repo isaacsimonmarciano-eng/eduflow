@@ -12,12 +12,11 @@ import {
   mutationGeneric,
   queryGeneric,
 } from "convex/server";
-import type { DataModel } from "./dataModel";
 
-export const query = queryGeneric<DataModel>;
-export const mutation = mutationGeneric<DataModel>;
+export const query = queryGeneric;
+export const mutation = mutationGeneric;
 export const action = actionGeneric;
-export const internalQuery = internalQueryGeneric<DataModel>;
-export const internalMutation = internalMutationGeneric<DataModel>;
+export const internalQuery = internalQueryGeneric;
+export const internalMutation = internalMutationGeneric;
 export const internalAction = internalActionGeneric;
 export const httpAction = httpActionGeneric;
