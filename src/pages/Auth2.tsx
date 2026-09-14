@@ -3,13 +3,19 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
-import { GraduationCap, Loader2, Lock, Mail, Send } from "lucide-react";
+import {
+  GraduationCap,
+  Loader2,
+  Mail,
+  Send,
+} from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
@@ -18,13 +24,12 @@ import { useAction } from "convex/react";
 function AuthEmail() {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
-  const startEmail = useAction(api.authEd.startEmailSignIn);
+  const startEmail = useAction(api.emailSignIn.startEmail);
 
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [checkEmailSent, setCheckEmailSent] = useState(false);
 
   // Connect via Email QR Code UI
   useEffect(() => {
@@ -40,11 +45,13 @@ function AuthEmail() {
     try {
       // Trigger email magic link flow. The nonce is consumed by the EcoleDirecte
       // provider identity so the auth handshake stays identical.
-      const { nonce } = await startEmail({
-        email,
-        displayName,
-      });
-      await signIn("ecoledirecte", { nonce, flow: "signIn" });
+      const result = await startEmail({ email, displayName });
+      if (!result.ok) {
+        setError(result.message);
+        setIsLoading(false);
+        return;
+      }
+      await signIn("ecoledirecte", { nonce: result.nonce, flow: "signIn" });
       navigate("/dashboard");
     } catch (err) {
       console.error("Email sign-in error:", err);

@@ -45,11 +45,9 @@ const HIGHLIGHTS = [
   },
   {
     emoji: "🔒",
-    soft: "#eef2ff",
-    title: "Deux façons de entrer",
-    text: "EcoleDirecte ou e-mail. Pas besoin de connexion si tu n'es pas encore
-                  dans la classe.",
-  },
+    soft: "#eef2ff",            title: "Deux façons de te connecter",
+            text: "EcoleDirecte ou e-mail : deux façons d'entrer dans la classe.",
+          },
 ];
 
 type StartResult = {
@@ -362,9 +360,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 <CardDescription>
                   Mêmes identifiants que le site de ton école
                 </CardDescription>
-                <span className="text-[11px] font-semibold text-indigo-600">
-                  Isaac Marciano te reverra.
-                </span>
                 </CardHeader>
                 <form onSubmit={handleSubmit}>
                   <CardContent className="grid gap-4">
@@ -439,8 +434,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </form>
                 <CardFooter className="justify-center border-t bg-muted/60 py-3">
                   <p className="text-center text-xs text-muted-foreground">
-                    Ou inscris-toi en e-mail si tu n'as pas EcoleDirecte —
-                    un admin t'enverra un lien d'accès.
+    Pas d'EcoleDirecte ? Inscris-toi par e-mail pour rejoindre la classe.
                   </p>
                 </CardFooter>
               </>
