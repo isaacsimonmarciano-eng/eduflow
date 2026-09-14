@@ -826,6 +826,7 @@ function MaClasse({
   const inviteByEmail = useMutation(api.invites.inviteByEmail);
   const revoke = useMutation(api.invites.revoke);
   const saveDelegueSession = useAction(api.delegueEcoleDirecte.saveDelegueSession);
+  const finishDelegueSession = useAction(api.delegueEcoleDirecte.finishDelegueSession);
   const syncFromDelegue = useAction(api.delegueEcoleDirecte.syncFromDelegue);
 
   const [email, setEmail] = useState("");
@@ -834,6 +835,8 @@ function MaClasse({
   const [edPass, setEdPass] = useState("");
   const [edLoading, setEdLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [edTwoFa, setEdTwoFa] = useState<{ handle: string; question: string; choices: { label: string; value: string }[] } | null>(null);
+  const [edAnswering, setEdAnswering] = useState(false);
 
   const handleInvite = async () => {
     if (!className) return;
@@ -861,13 +864,48 @@ function MaClasse({
     }
     setEdLoading(true);
     try {
-      await saveDelegueSession({ identifiant: edIdent.trim(), motdepasse: edPass });
-      toast.success("EcoleDirecte connecté ! Tu peux maintenant synchroniser.");
-      setEdPass("");
+      const res = (await saveDelegueSession({ identifiant: edIdent.trim(), motdepasse: edPass })) as any;
+      if (res?.ok === true) {
+        toast.success("EcoleDirecte connecté ! Tu peux maintenant synchroniser.");
+        setEdPass("");
+        setEdTwoFa(null);
+      } else if (res?.twoFa) {
+        setEdTwoFa({ handle: res.handle, question: res.question, choices: res.choices });
+        toast.info("Vérification demandée par EcoleDirecte — choisis ta réponse ci-dessous.");
+      } else if (res?.ok === false) {
+        toast.error(res.message ?? "Connexion EcoleDirecte échouée.");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Connexion EcoleDirecte échouée.");
     } finally {
       setEdLoading(false);
+    }
+  };
+
+  const handleAnswerTwoFa = async (choixValue: string) => {
+    if (!edTwoFa) return;
+    setEdAnswering(true);
+    try {
+      const res = (await finishDelegueSession({
+        handle: edTwoFa.handle,
+        choixValue,
+        identifiant: edIdent.trim(),
+        motdepasse: edPass,
+      })) as any;
+      if (res?.ok === true) {
+        toast.success("Vérification réussie — EcoleDirecte connecté ! Tu peux synchroniser.");
+        setEdTwoFa(null);
+        setEdPass("");
+      } else if (res?.twoFa) {
+        setEdTwoFa({ handle: res.handle, question: res.question, choices: res.choices });
+        toast.info(res.message ?? "EcoleDirecte demande une autre vérification.");
+      } else {
+        toast.error(res?.message ?? "Réponse refusée — réessaie.");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Vérification échouée.");
+    } finally {
+      setEdAnswering(false);
     }
   };
 
@@ -988,6 +1026,34 @@ function MaClasse({
                   Synchroniser devoirs + EDT
                 </Button>
               </div>
+              {edTwoFa && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-sm font-bold text-amber-900">🔐 Vérification EcoleDirecte</p>
+                  <p className="mt-1 text-sm text-amber-800">{edTwoFa.question}</p>
+                  <div className="mt-3 grid gap-2">
+                    {edTwoFa.choices.map((c) => (
+                      <Button
+                        key={c.value}
+                        variant="outline"
+                        disabled={edAnswering}
+                        onClick={() => void handleAnswerTwoFa(c.value)}
+                        className="justify-start rounded-xl bg-white text-left font-medium hover:bg-amber-100"
+                      >
+                        {edAnswering ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                        {c.label}
+                      </Button>
+                    ))}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 rounded-full text-xs"
+                    onClick={() => setEdTwoFa(null)}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              )}
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Tes identifiants ne sont jamais montrés aux élèves — seule la session chiffrée est conservée côté
                 serveur pour la synchronisation.

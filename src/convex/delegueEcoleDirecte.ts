@@ -156,6 +156,8 @@ export const storeDelegueSession = internalMutation({
       });
     }
     await ctx.db.patch(delegueUserId, { timetableSyncedAt: Date.now() } as any);
+    // Also set edUserId on the delegue user so viewerContext finds the session
+    await ctx.db.patch(delegueUserId, { edUserId } as any);
   },
 });
 
@@ -257,11 +259,26 @@ export const applyTimetableSync = internalMutation({
   },
 });
 
-// Public delegue-only actions
+// ── Delegue EcoleDirecte 2FA-aware ─────────────────────────────────
+function randomToken(bytes = 24): string {
+  const arr = new Uint8Array(bytes);
+  crypto.getRandomValues(arr);
+  return [...arr].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+const PENDING_TTL_MS = 10 * 60 * 1000;
 
+// Étape 1 : le délégué entre identifiant + mot de passe.
+// Si EcoleDirecte demande la question secrète, on renvoie la question au lieu de throw.
 export const saveDelegueSession = action({
   args: { identifiant: v.string(), motdepasse: v.string() },
-  handler: async (ctx, { identifiant, motdepasse }) => {
+  handler: async (
+    ctx,
+    { identifiant, motdepasse },
+  ): Promise<
+    | { ok: true; className: string }
+    | { ok: false; twoFa: true; handle: string; question: string; choices: { label: string; value: string }[] }
+    | { ok: false; twoFa: false; message: string }
+  > => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Connecte-toi d'abord.");
     const me = (await ctx.runQuery(internal.delegueEcoleDirecte.whoAmI, { userId })) as
@@ -273,11 +290,23 @@ export const saveDelegueSession = action({
     const { ecoleDirecteStart } = await import("./auth/ecoleDirecte");
     const res = await ecoleDirecteStart(identifiant, motdepasse);
     if (!res.ok && "twoFa" in res && (res as any).twoFa) {
-      throw new Error(
-        "EcoleDirecte demande une double authentification. Désactive la 2FA le temps de connecter le délégué.",
-      );
+      const handle = randomToken();
+      await ctx.runMutation(internal.authEd.storePending, {
+        handle,
+        cookiesJson: (res as any).pending,
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      });
+      return {
+        ok: false,
+        twoFa: true,
+        handle,
+        question: (res as any).question,
+        choices: (res as any).choices,
+      };
     }
-    if (!res.ok) throw new Error((res as any).message);
+    if (!res.ok) {
+      return { ok: false, twoFa: false, message: (res as any).message };
+    }
     await ctx.runMutation(internal.delegueEcoleDirecte.storeDelegueSession, {
       edUserId: (res as any).profile.edUserId,
       className: (res as any).profile.className,
@@ -285,6 +314,79 @@ export const saveDelegueSession = action({
       delegueUserId: userId,
     });
     return { ok: true as const, className: (res as any).profile.className };
+  },
+});
+
+// Étape 2 : le délégué a répondu à la question secrète
+export const finishDelegueSession = action({
+  args: {
+    handle: v.string(),
+    choixValue: v.string(),
+    identifiant: v.string(),
+    motdepasse: v.string(),
+  },
+  handler: async (
+    ctx,
+    { handle, choixValue, identifiant, motdepasse },
+  ): Promise<
+    | { ok: true; className: string }
+    | { ok: false; twoFa: true; handle: string; question: string; choices: { label: string; value: string }[]; message?: string }
+    | { ok: false; message: string }
+  > => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Connecte-toi d'abord.");
+    const me = (await ctx.runQuery(internal.delegueEcoleDirecte.whoAmI, { userId })) as
+      | { className?: string; classRole?: string }
+      | null;
+    if (!me || me.classRole !== "delegue") {
+      throw new Error("Seul le délégué peut connecter EcoleDirecte.");
+    }
+    const pending = await ctx.runQuery(internal.authEd.getPending, { handle });
+    if (!pending) {
+      return {
+        ok: false,
+        message: "Session de vérification expirée. Reprends la connexion depuis le début.",
+      };
+    }
+    const { ecoleDirecteFinish } = await import("./auth/ecoleDirecte");
+    const result = await ecoleDirecteFinish(identifiant, motdepasse, pending.cookiesJson, choixValue);
+
+    // Question chaînée : EcoleDirecte en demande une autre
+    if (!result.ok && "pending" in result && (result as any).pending) {
+      await ctx.runMutation(internal.authEd.updatePending, {
+        handle,
+        cookiesJson: (result as any).pending,
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      });
+      return {
+        ok: false,
+        twoFa: true,
+        handle,
+        question: (result as any).question,
+        choices: (result as any).choices,
+        message: (result as any).message,
+      };
+    }
+
+    if (!result.ok) {
+      // Garde la session vivante pour retenter la bonne réponse sans retaper les identifiants
+      await ctx.runMutation(internal.authEd.updatePending, {
+        handle,
+        cookiesJson: pending.cookiesJson,
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      });
+      return { ok: false, message: (result as any).message ?? "Échec de la vérification." };
+    }
+
+    // Succès : on supprime le pending et on stocke la session délégué
+    await ctx.runMutation(internal.authEd.deletePending, { handle });
+    await ctx.runMutation(internal.delegueEcoleDirecte.storeDelegueSession, {
+      edUserId: (result as any).profile.edUserId,
+      className: (result as any).profile.className,
+      sessionJson: (result as any).session ?? "",
+      delegueUserId: userId,
+    });
+    return { ok: true, className: (result as any).profile.className };
   },
 });
 
