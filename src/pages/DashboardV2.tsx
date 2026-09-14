@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { summarizeNotesOfflineAware } from "@/lib/ai-offline-guard";
+import { isDemoMode } from "@/demo/mode";
 import {
   Dialog,
   DialogContent,
@@ -167,18 +169,18 @@ export default function DashboardV2() {
     }
     setGenerating(true);
     try {
-      const result = await summarizeNotes({
-        notes: form.notes,
-        subjectLabel: subjectOf(form.subjectKey).label,
-        date: form.date,
-      });
+      const result = await summarizeNotesOfflineAware(
+        summarizeNotes as unknown as (args: { notes: string; subjectLabel: string; date: string }) => Promise<{ title: string; summary: string; keyPoints: string[] }>,
+        { notes: form.notes, subjectLabel: subjectOf(form.subjectKey).label, date: form.date },
+      );
       setForm((previous) => ({
         ...previous,
         title: result.title || previous.title,
         summary: result.summary || previous.summary,
         keyPoints: result.keyPoints.length ? result.keyPoints.join("\n") : previous.keyPoints,
       }));
-      toast.success("Résumé généré. Vérifie-le avant de publier.");
+      if (isDemoMode() || !navigator.onLine) toast.success("Résumé généré hors-ligne ✨ — aucune connexion nécessaire.");
+      else toast.success("Résumé généré. Vérifie-le avant de publier.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "L'IA n'a pas répondu.");
     } finally {

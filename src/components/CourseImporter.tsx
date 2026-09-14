@@ -2,6 +2,7 @@ import { api } from "@/convex/_generated/api";
 import { SUBJECTS, subjectOf } from "@/lib/subjects";
 import { todayISO } from "@/lib/dates";
 import { extractImportedFile, textSource, type ImportedSource } from "@/lib/courseImport";
+import { analyzeImportedSourcesOfflineAware } from "@/lib/ai-offline-guard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -84,11 +85,15 @@ export default function CourseImporter() {
     setProcessing(true);
     setStatus("Détection de la matière et création du récapitulatif…");
     try {
-      const result = await analyze({
-        sources: sources.map(({ name, kind, text }) => ({ name, kind, text })),
-        subjectHint: hasOnlyText ? subjectOf(manualSubject).label : undefined,
-      });
+      const result = await analyzeImportedSourcesOfflineAware(
+        analyze as unknown as (args: { sources: { name: string; kind: string; text: string }[]; subjectHint?: string }) => Promise<Analysis>,
+        {
+          sources: sources.map(({ name, kind, text }) => ({ name, kind, text })),
+          subjectHint: hasOnlyText ? subjectOf(manualSubject).label : undefined,
+        },
+      );
       setAnalysis(result as Analysis);
+      if (!navigator.onLine) toast.success("Analyse hors-ligne réussie — aucune connexion utilisée.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Analyse impossible.");
     } finally {

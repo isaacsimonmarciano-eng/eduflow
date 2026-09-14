@@ -1,293 +1,73 @@
-## Overview
+# Cartable Vivant — Site du délégué
 
-This project uses the following tech stack:
-- Vite
-- Typescript
-- React Router v7 (all imports from `react-router` instead of `react-router-dom`)
-- React 19 (for frontend components)
-- Tailwind v4 (for styling)
-- Shadcn UI (for UI components library)
-- Lucide Icons (for icons)
-- Convex (for backend & database)
-- Convex Auth (for authentication)
-- Framer Motion (for animations)
-- Three js (for 3d models)
+Cartable moderne infographique pour une classe collège/lycée : résumés de cours jour par jour, devoirs, questions-réponses, et synchronisation EcoleDirecte.
 
-All relevant files live in the 'src' directory.
+## Lancer en local sur Mac (présentation sans Wi-Fi) — une commande
 
-Use bun for the package manager.
+**Préparer la démo (une fois, avec Internet) :**
 
-## Setup
-
-This project is set up already and running on a cloud environment, as well as a convex development in the sandbox.
-
-## Environment Variables
-
-The project is set up with project specific CONVEX_DEPLOYMENT and VITE_CONVEX_URL environment variables on the client side.
-
-The convex server has a separate set of environment variables that are accessible by the convex backend.
-
-Currently, these variables include auth-specific keys: JWKS, JWT_PRIVATE_KEY, and SITE_URL.
-
-
-# Using Authentication (Important!)
-
-You must follow these conventions when using authentication.
-
-## Auth is already set up.
-
-All convex authentication functions are already set up. The auth currently uses email OTP and anonymous users, but can support more.
-
-The email OTP configuration is defined in `src/convex/auth/emailOtp.ts`. DO NOT MODIFY THIS FILE.
-
-Also, DO NOT MODIFY THESE AUTH FILES: `src/convex/auth.config.ts` and `src/convex/auth.ts`.
-
-## Using Convex Auth on the backend
-
-On the `src/convex/users.ts` file, you can use the `getCurrentUser` function to get the current user's data.
-
-## Using Convex Auth on the frontend
-
-The `/auth` page is already set up to use auth. Navigate to `/auth` for all log in / sign up sequences.
-
-You MUST use this hook to get user data. Never do this yourself without the hook:
-```typescript
-import { useAuth } from "@/hooks/use-auth";
-
-const { isLoading, isAuthenticated, user, signIn, signOut } = useAuth();
+```bash
+git clone <ton-repo>
+cd <ton-repo>
+bun install        # ou npm install / pnpm install
+bun run build:demo # fabrique le site statique démo dans dist/
 ```
 
-## Protected Routes
+**Le jour J, sans Wi-Fi :**
 
-The starter `/dashboard` route is protected with `RequireAuth`. Extend that page
-for the product's authenticated experience, and reuse `RequireAuth` when adding
-another protected route — do NOT hand-roll a redirect to `/auth`, since landing
-on a bare sign-in form with no explanation of what was blocked is confusing.
-
-`RequireAuth` states the block on the page the visitor asked for and sends them
-to `/auth?returnTo=<current route>` when they choose to sign in, so they come
-back to it. Pass `title` and `description` to say what the page is:
-
-```tsx
-<Route
-  path="/dashboard"
-  element={
-    <RequireAuth
-      title="Sign in to view your dashboard"
-      description="Your projects and settings live here."
-    >
-      <Dashboard />
-    </RequireAuth>
-  }
-/>
+```bash
+bun run preview:demo
+# ouvre http://localhost:4173
 ```
 
-Pass `redirectImmediately` for a route where bouncing straight to `/auth` really
-is better.
+Coupe le Wi-Fi avant, recharge avec `⌘ + R` : tout doit marcher — `/` → `/auth` (prénom + e-mail quelconque, ex. `isaac@demo.local`) → `/dashboard` (Cours / Devoirs / Questions / Ma classe) → `/questions`. Aucun écran d'erreur : les données sont dans `localStorage`, le résumé IA est généré en local (`src/lib/offline-summary.ts`).
 
-## Auth Page
+Variante dev live sans build (aussi sans Wi-Fi, mais serveur de dev) : `bun run demo` ou `bun run dev:demo` → `http://localhost:5173`.
 
-The auth page is defined in `src/pages/Auth.tsx`. Send sign-in and sign-up actions
-to `/auth`.
+**Données de démo :** `src/demo/store.tsx` seed (3 élèves, 3 cours, 3 devoirs, EDT demain, 1 question + 1 réponse, 1 invite pending). Tout est modifiable et persistant (localStorage `cartable-vivant:demo-state:v2`). Bouton *Réinitialiser la démo* dans le bandeau ambre et dans `OfflineBanner`.
 
-## Authorization
+## Comment ça marche (architecture hors-ligne)
 
-You can perform authorization checks on the frontend and backend.
+| Besoin | En ligne (Convex) | Sans Wi-Fi (VITE_DEMO_MODE=true) |
+|---|---|---|
+| `VITE_CONVEX_URL` manquant ? | crash avant | `src/main.tsx` détecte via `src/demo/mode.ts:isDemoMode()` et monte `DemoProvider` + `AuthDemo`/`DashboardDemo` — **jamais** `new ConvexReactClient(undefined)` |
+| Auth | `src/convex/emailSignIn` + Convex Auth | `src/demo/store:signInLocal(name,email)` + `DemoRequireAuth` — e-mail non vérifié, 1er inscrit = `delegue` |
+| Cours / devoirs / questions / invites / EDT | `src/convex/{lessons,homework,questions,invites,tomorrow,homeworkNotes}.ts` | `src/demo/store.tsx` (même shape, `localStorage`) |
+| Générer un résumé | `src/convex/ai.ts` → Vly AI / OpenAI | `src/lib/offline-summary.ts:localSummarize` via `src/lib/ai-offline-guard.ts` — fallback automatique si `!navigator.onLine` ou `isDemoMode()` ou si l'appel Convex throw |
+| Importer (PDF/DOCX/photo/audio) | `src/lib/courseImport.ts` (pdfjs, mammoth, tesseract, transformers) — déjà local | idem offline ; l'analyse `analyzeImportedSources` bascule sur `localDetectSubjectAndFormat` |
+| EcoleDirecte | `src/convex/auth/ecoleDirecte.ts` + `src/convex/delegueEcoleDirecte.ts` → `api.ecoledirecte.com` | **Désactivé** en démo : panneau *Ma classe → EcoleDirecte — démo* explique qu'aucun appel n'est fait ; *Synchroniser (démo)* injecte un devoir + des créneaux EDT factices |
+| Pièces jointes | `src/convex/attachments.ts` | non disponible offline (gardé hors du store démo par simplicité — à étendre si besoin) |
 
-On the frontend, you can use the `useAuth` hook to get the current user's data and authentication state.
+**Ce qui dépend encore d'Internet en mode normal (non-démo) :**
+- Convex (`VITE_CONVEX_URL` + `CONVEX_DEPLOYMENT`) — synchro temps réel
+- Vly AI / OpenAI (`src/convex/ai.ts`) — génération de résumés
+- `api.ecoledirecte.com` — login + synchro devoirs/EDT
+- OCR `tesseract.js` au 1er chargement du worker, STT `@huggingface/transformers` — mis en cache ensuite
 
-You should also be protecting queries, mutations, and actions at the base level, checking for authorization securely.
+Tous ces appels sont **gardés** en démo : `CourseImporter` et `DashboardV2` passent par `ai-offline-guard`, `src/main.tsx` court-circuite Convex, aucune requête n'est émise.
 
-## Adding a redirect after auth
+## Scripts
 
-The `/auth` route in `src/main.tsx` redirects to `/dashboard` by default. If the
-product's main authenticated route is different, update `redirectAfterAuth` to
-that route. A validated same-origin `returnTo` query parameter takes priority so
-users can resume the protected page they originally requested. Never leave an
-authenticated product redirecting back to the public landing page.
+| Script | Usage |
+|---|---|
+| `bun run dev` | Vite normal (besoin de `VITE_CONVEX_URL` + Convex) |
+| `bun run dev:demo` / `bun run demo` | Vite en **mode démo** (`VITE_DEMO_MODE=true`), sans Convex |
+| `bun run build` | `tsc -b && vite build` normal |
+| `bun run build:demo` | Build statique démo (`dist/`) — prêt à présenter sans Wi-Fi |
+| `bun run preview` | `vite preview` normal |
+| `bun run preview:demo` | Preview du **build démo** sur `0.0.0.0:4173` |
 
-## Complete authenticated products
+## Présentation conseillée
 
-When the requested product implies accounts, a workspace, a dashboard, or other
-signed-in functionality, the task is not complete with only a landing page and
-auth form. Build the main authenticated experience, protect its route, and verify
-that signing in reaches it.
+1. `bun run preview:demo` → `http://localhost:4173` → montre `/` (landing).
+2. `/auth` → tape `Isaac` / `isaac@demo.local` → *Rejoindre*.
+3. `/dashboard` → *Cours* : *Importer → texte → Générer hors-ligne → Publier* ; *Devoirs* : cocher/faire ; *Questions* : poser/répondre ; *Ma classe* : *Inviter* + *EcoleDirecte (démo) → Synchroniser*.
+4. Coupe le Wi-Fi mid-demo si tu veux prouver le offline : tout reste cliquable.
 
-# Frontend Conventions
+## Stack
 
-You will be using the Vite frontend with React 19, Tailwind v4, and Shadcn UI.
+Vite · TypeScript · React 19 · React Router v7 · Tailwind v4 · shadcn/ui · Lucide · Convex · Convex Auth · Framer Motion — Bun recommandé.
 
-Generally, pages should be in the `src/pages` folder, and components should be in the `src/components` folder.
+## Variables d'environnement (mode en ligne uniquement)
 
-Shadcn primitives are located in the `src/components/ui` folder and should be used by default.
-
-## Page routing
-
-Your page component should go under the `src/pages` folder.
-
-When adding a page, update the react router configuration in `src/main.tsx` to include the new route you just added.
-
-## Shad CN conventions
-
-Follow these conventions when using Shad CN components, which you should use by default.
-- Remember to use "cursor-pointer" to make the element clickable
-- For title text, use the "tracking-tight font-bold" class to make the text more readable
-- Always make apps MOBILE RESPONSIVE. This is important
-- AVOID NESTED CARDS. Try and not to nest cards, borders, components, etc. Nested cards add clutter and make the app look messy.
-- AVOID SHADOWS. Avoid adding any shadows to components. stick with a thin border without the shadow.
-- Avoid skeletons; instead, use the loader2 component to show a spinning loading state when loading data.
-
-
-## Landing Pages
-
-You must always create good-looking designer-level styles to your application. 
-- Make it well animated and fit a certain "theme", ie neo brutalist, retro, neumorphism, glass morphism, etc
-
-Use known images and emojis from online.
-
-If the user is logged in already, show the get started button to say "Dashboard" or "Profile" instead to take them there.
-
-## Responsiveness and formatting
-
-Make sure pages are wrapped in a container to prevent the width stretching out on wide screens. Always make sure they are centered aligned and not off-center.
-
-Always make sure that your designs are mobile responsive. Verify the formatting to ensure it has correct max and min widths as well as mobile responsiveness.
-
-- Always create sidebars for protected dashboard pages and navigate between pages
-- Always create navbars for landing pages
-- On these bars, the created logo should be clickable and redirect to the index page
-
-## Animating with Framer Motion
-
-You must add animations to components using Framer Motion. It is already installed and configured in the project.
-
-To use it, import the `motion` component from `framer-motion` and use it to wrap the component you want to animate.
-
-
-### Other Items to animate
-- Fade in and Fade Out
-- Slide in and Slide Out animations
-- Rendering animations
-- Button clicks and UI elements
-
-Animate for all components, including on landing page and app pages.
-
-## Three JS Graphics
-
-Your app comes with three js by default. You can use it to create 3D graphics for landing pages, games, etc.
-
-
-## Colors
-
-You can override colors in: `src/index.css`
-
-This uses the oklch color format for tailwind v4.
-
-Always use these color variable names.
-
-Make sure all ui components are set up to be mobile responsive and compatible with both light and dark mode.
-
-Set theme using `dark` or `light` variables at the parent className.
-
-## Styling and Theming
-
-When changing the theme, always change the underlying theme of the shad cn components app-wide under `src/components/ui` and the colors in the index.css file.
-
-Avoid hardcoding in colors unless necessary for a use case, and properly implement themes through the underlying shad cn ui components.
-
-When styling, ensure buttons and clickable items have pointer-click on them (don't by default).
-
-Always follow a set theme style and ensure it is tuned to the user's liking.
-
-## Toasts
-
-You should always use toasts to display results to the user, such as confirmations, results, errors, etc.
-
-Use the shad cn Sonner component as the toaster. For example:
-
-```
-import { toast } from "sonner"
-
-import { Button } from "@/components/ui/button"
-export function SonnerDemo() {
-  return (
-    <Button
-      variant="outline"
-      onClick={() =>
-        toast("Event has been created", {
-          description: "Sunday, December 03, 2023 at 9:00 AM",
-          action: {
-            label: "Undo",
-            onClick: () => console.log("Undo"),
-          },
-        })
-      }
-    >
-      Show Toast
-    </Button>
-  )
-}
-```
-
-Remember to import { toast } from "sonner". Usage: `toast("Event has been created.")`
-
-## Dialogs
-
-Always ensure your larger dialogs have a scroll in its content to ensure that its content fits the screen size. Make sure that the content is not cut off from the screen.
-
-Ideally, instead of using a new page, use a Dialog instead. 
-
-# Using the Convex backend
-
-You will be implementing the convex backend. Follow your knowledge of convex and the documentation to implement the backend.
-
-## The Convex Schema
-
-You must correctly follow the convex schema implementation.
-
-The schema is defined in `src/convex/schema.ts`.
-
-Do not include the `_id` and `_creationTime` fields in your queries (it is included by default for each table).
-Do not index `_creationTime` as it is indexed for you. Never have duplicate indexes.
-
-
-## Convex Actions: Using CRUD operations
-
-When running anything that involves external connections, you must use a convex action with "use node" at the top of the file.
-
-You cannot have queries or mutations in the same file as a "use node" action file. Thus, you must use pre-built queries and mutations in other files.
-
-You can also use the pre-installed internal crud functions for the database:
-
-```ts
-// in convex/users.ts
-import { crud } from "convex-helpers/server/crud";
-import schema from "./schema.ts";
-
-export const { create, read, update, destroy } = crud(schema, "users");
-
-// in some file, in an action:
-const user = await ctx.runQuery(internal.users.read, { id: userId });
-
-await ctx.runMutation(internal.users.update, {
-  id: userId,
-  patch: {
-    status: "inactive",
-  },
-});
-```
-
-
-## Common Convex Mistakes To Avoid
-
-When using convex, make sure:
-- Document IDs are referenced as `_id` field, not `id`.
-- Document ID types are referenced as `Id<"TableName">`, not `string`.
-- Document object types are referenced as `Doc<"TableName">`.
-- Keep schemaValidation to false in the schema file.
-- You must correctly type your code so that it passes the type checker.
-- You must handle null / undefined cases of your convex queries for both frontend and backend, or else it will throw an error that your data could be null or undefined.
-- Always use the `@/folder` path, with `@/convex/folder/file.ts` syntax for importing convex files.
-- This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
-- Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
-- NEVER have return type validators.
+`VITE_CONVEX_URL` (client), `CONVEX_DEPLOYMENT` — fournis par l'environnement cloud. En mode démo elles ne sont **pas** requises (le `.env` peut rester vide).

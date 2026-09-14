@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "VITE_DEMO_MODE=true vite",
     "build": "tsc -b && vite build",
+    "build:demo": "VITE_DEMO_MODE=true tsc -b && VITE_DEMO_MODE=true vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "preview:demo": "VITE_DEMO_MODE=true vite preview --host 0.0.0.0 --port 4173",
+    "demo": "VITE_DEMO_MODE=true vite --host 0.0.0.0 --port 5173",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "preview": "vite preview"
+    "format": "prettier --write ."
   },
   "dependencies": {
     "@convex-dev/auth": "^0.0.90",
