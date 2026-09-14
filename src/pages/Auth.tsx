@@ -32,10 +32,10 @@ function resolveRedirectAfterAuth(
 
 const HIGHLIGHTS = [
   {
-    emoji: "🎓",
+    emoji: "🎒",
     soft: "#f0fdf4",
     title: "Ta classe, ton espace",
-    text: "Les résumés et les devoirs sont réservés à ta classe.",
+    text: "Les résumés et les devoirs sont réservés à ta classe Isaac Marciano.",
   },
   {
     emoji: "⭐",
@@ -46,8 +46,9 @@ const HIGHLIGHTS = [
   {
     emoji: "🔒",
     soft: "#eef2ff",
-    title: "Vérification réelle",
-    text: "Tes identifiants sont vérifiés par EcoleDirecte à chaque connexion.",
+    title: "Deux façons de entrer",
+    text: "EcoleDirecte ou e-mail. Pas besoin de connexion si tu n'es pas encore
+                  dans la classe.",
   },
 ];
 
@@ -358,9 +359,12 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <CardTitle className="font-display text-xl">
                     Connexion EcoleDirecte
                   </CardTitle>
-                  <CardDescription>
-                    Mêmes identifiants que le site de ton école
-                  </CardDescription>
+                <CardDescription>
+                  Mêmes identifiants que le site de ton école
+                </CardDescription>
+                <span className="text-[11px] font-semibold text-indigo-600">
+                  Isaac Marciano te reverra.
+                </span>
                 </CardHeader>
                 <form onSubmit={handleSubmit}>
                   <CardContent className="grid gap-4">
@@ -435,8 +439,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </form>
                 <CardFooter className="justify-center border-t bg-muted/60 py-3">
                   <p className="text-center text-xs text-muted-foreground">
-                    Besoin d'aide ? Tes identifiants sont ceux reçus à la
-                    rentrée.
+                    Ou inscris-toi en e-mail si tu n'as pas EcoleDirecte —
+                    un admin t'enverra un lien d'accès.
                   </p>
                 </CardFooter>
               </>

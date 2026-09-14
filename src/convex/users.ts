@@ -74,6 +74,38 @@ export const syncFromClass = mutation({
   },
 });
 
+/** Create / attach an email-only user to Isaac's class (delegation invite). */
+export const jonFromEmail = mutation({
+  args: {
+    email: v.string(),
+    displayName: v.string(),
+  },
+  handler: async (ctx, { email, displayName }) => {
+    const lower = email.trim().toLowerCase();
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", lower))
+      .first();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        name: displayName || existing.name,
+        className: "Isaac Marciano",
+        classRole: "eleve",
+      });
+      return { joined: false as const, userId: existing._id };
+    }
+
+    const id = await ctx.db.insert("users", {
+      name: displayName || "Élève",
+      email: lower,
+      className: "Isaac Marciano",
+      classRole: "eleve",
+    });
+    return { joined: true as const, userId: id };
+  },
+});
+
 /** Class directory: names and roles only, for everyone in the class. */
 export const listClassmates = query({
   args: {},
@@ -95,6 +127,9 @@ export const listClassmates = query({
         name: u.name ?? "Élève",
         classRole: u.classRole ?? "eleve",
         isMe: u._id === viewerId,
+        // Only via EcoleDirecte — email-only accounts are anonymes pour les
+        // camarades (nombres et rôles, pas d'email jamais exposé).
+        fromEd: !!(u.edUserId ?? false),
       }))
       .sort((a, b) => {
         // Délégués first, then alphabetical.
