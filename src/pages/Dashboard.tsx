@@ -794,6 +794,7 @@ type Classmate = {
   name: string;
   classRole: "eleve" | "delegue";
   isMe: boolean;
+  fromEd?: boolean;
 };
 
 function MaClasse({
@@ -841,11 +842,10 @@ function MaClasse({
           <div className="animate-float-y text-5xl">🫂</div>
           <h3 className="mt-4 font-display text-lg font-bold">
             Tu es le premier de ta classe !
-          </h3>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          </h3>              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
             Partage le site avec tes camarades : dès qu'ils se connectent avec
-            leur compte EcoleDirecte, ils apparaissent ici et rejoignent
-            l'espace de la classe.
+            leur compte EcoleDirecte ou leur e-mail, ils apparaissent ici et
+            rejoignent l'espace de la classe.
           </p>
         </div>
       ) : (
@@ -886,7 +886,7 @@ function MaClasse({
                       m.classRole === "delegue" ? "text-amber-600" : "text-muted-foreground"
                     }`}
                   >
-                    {m.classRole === "delegue" ? "⭐ Délégué de la classe" : "🎓 Élève"}
+                    {m.classRole === "delegue" ? "⭐ Délégué de la classe" : m.fromEd ? "✍️ Sans EcoleDirecte" : "🎓 Élève"}
                   </p>
                 </div>
               </div>
