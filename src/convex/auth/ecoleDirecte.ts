@@ -18,7 +18,9 @@
  *     250 with a fresh question may then be followed by a spurious 505 on the
  *     next replay with an fa list — retried once without the fa list, as the
  *     official client does.
- *  6. Extract the student account (type "E"): id, name, class label.
+ *  6. Extract the student identity — a `typeCompte: "E"` account, a child of a
+ *     `typeCompte: "1"` family account, then complete name/class from
+ *     `eleves/<id>.awp`.
  *
  * NOTE: this is an unofficial, undocumented endpoint. It can change or be
  * blocked at any time — failures surface as friendly login errors.
@@ -542,65 +544,95 @@ async function extractStudentProfile(
   body: EdCode,
 ): Promise<EdProfile | null> {
   const data = body.data;
-  const accounts = data.accounts;
-  if (!Array.isArray(accounts)) return null;
+  const accounts = (Array.isArray(data.accounts) ? data.accounts : [])
+    .map(asRecord)
+    .filter((a): a is Record<string, unknown> => a !== undefined);
 
-  const student = accounts.find(
-    (a) =>
-      a &&
-      typeof a === "object" &&
-      ((a as Record<string, unknown>).type === "E" ||
-        (a as Record<string, unknown>).type === 1),
-  ) as Record<string, unknown> | undefined;
-  if (!student) return null;
-
-  const edUserId = student.id != null ? String(student.id) : "";
-  if (!edUserId) return null;
-
-  const p = (student.profile ?? {}) as Record<string, unknown>;
-  const firstName = str(p.prenom) ?? str(student.prenom) ?? "";
-  const lastName = str(p.nom) ?? str(student.nom) ?? "";
-
-  let className = "";
-  let classId: string | undefined;
-  const classe = p.classe;
-  if (typeof classe === "string") {
-    className = classe;
-  } else if (classe && typeof classe === "object") {
-    const c = classe as Record<string, unknown>;
-    if (typeof c.libelle === "string") className = c.libelle;
-    if (c.id != null) classId = String(c.id);
-  }
-  if (!className && typeof p.classeLibelle === "string") {
-    className = p.classeLibelle;
-  }
-  if (!className && typeof student.classe === "string") {
-    className = student.classe;
-  }
-
-  // Best-effort: fetch the full profile if the class is still missing.
-  if (!className) {
-    try {
-      const deep = await session.post(
-        `${API_BASE}/${API_VERSION}/eleves/${edUserId}.awp?verbe=get&v=${APP_VERSION}`,
-        {},
-      );
-      const classe2 = deep.data.classe;
-      if (typeof classe2 === "string" && classe2) className = classe2;
-      else if (classe2 && typeof classe2 === "object") {
-        const libelle = (classe2 as Record<string, unknown>).libelle;
-        if (typeof libelle === "string") className = libelle;
+  // Two shapes carry a student identity:
+  //  - a student account itself: `typeCompte: "E"` (its own id IS the student id)
+  //  - a family account: `typeCompte: "1"`, whose children live in profile.eleves[]
+  let student = accounts.find((a) => accountType(a) === "E");
+  if (!student) {
+    for (const account of accounts) {
+      const profile = asRecord(account.profile);
+      const eleves = Array.isArray(profile?.eleves) ? profile.eleves : [];
+      const child = eleves
+        .map(asRecord)
+        .find((e): e is Record<string, unknown> => e !== undefined);
+      if (child) {
+        student = child;
+        break;
       }
-      if (!className && typeof deep.data.classeLibelle === "string") {
-        className = deep.data.classeLibelle;
-      }
-      if (deep.data.classeId != null) classId = String(deep.data.classeId);
-    } catch {
-      // Non-blocking: the class stays unknown.
     }
   }
+  // Last resort: some responses inline the current identity in `data` itself.
+  if (!student && idOf(data.id) && (str(data.prenom) || str(data.nom))) {
+    student = data;
+  }
+  if (!student) return null;
 
-  return { edUserId, firstName, lastName, className, classId };
+  const edUserId = idOf(student.id);
+  if (!edUserId) return null;
+
+  const fromAccount = classInfo(student);
+  const profile: EdProfile = {
+    edUserId,
+    firstName: str(student.prenom) ?? "",
+    lastName: str(student.nom) ?? "",
+    className: fromAccount.label ?? "",
+    classId: fromAccount.id,
+  };
+
+  // The dedicated student record is the authoritative source for the name and,
+  // above all, the class — login accounts often omit it entirely.
+  try {
+    const deep = await session.post(
+      `${API_BASE}/${API_VERSION}/eleves/${edUserId}.awp?verbe=get&v=${APP_VERSION}`,
+      { anneeScolaire: "" },
+    );
+    const d = deep.data;
+    profile.firstName = str(d.prenom) ?? profile.firstName;
+    profile.lastName = str(d.nom) ?? profile.lastName;
+    const fromProfile = classInfo(d);
+    if (fromProfile.label) profile.className = fromProfile.label;
+    if (fromProfile.id) profile.classId = fromProfile.id;
+  } catch {
+    // Non-blocking: keep whatever the login response already gave us.
+  }
+
+  return profile;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** `typeCompte` is the real discriminator: "E" élève, "1" famille, "P" prof, "A" personnel. */
+function accountType(account: Record<string, unknown>): string {
+  const raw = account.typeCompte ?? account.type;
+  if (typeof raw === "string") return raw.trim().toUpperCase();
+  if (typeof raw === "number") return String(raw);
+  return "";
+}
+
+function idOf(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "string" && value.length > 0) return value;
+  return undefined;
+}
+
+/** Class label + id, accepting both the flat (`classeLibelle`) and nested (`classe`) shapes. */
+function classInfo(source: Record<string, unknown>): { label?: string; id?: string } {
+  const nested = asRecord(source.classe);
+  const label =
+    str(source.classeLibelle) ??
+    str(source.libelle) ??
+    str(source.classe) ??
+    (nested ? str(nested.libelle) ?? str(nested.code) : undefined);
+  const id = idOf(source.classeId) ?? (nested ? idOf(nested.id) : undefined);
+  return { label, id };
 }
 
 function str(value: unknown): string | undefined {
