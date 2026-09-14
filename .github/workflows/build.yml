@@ -23,5 +23,8 @@ jobs:
       - name: Install dependencies
         run: npm install --package-lock=false
 
+      - name: Generate Convex types
+        run: npx convex codegen
+
       - name: Build
         run: npm run build
