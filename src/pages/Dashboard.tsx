@@ -1068,7 +1068,6 @@ function MaClasse({
             </div>
           </div>
         </div>
-
       {classmates === undefined ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
