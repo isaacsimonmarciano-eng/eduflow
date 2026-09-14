@@ -262,7 +262,7 @@ export default function Devoirs({
                                   👩‍🏫 {h.teacher}
                                 </span>
                               )}
-                              {!h.done && late && (
+                              {late && !h.done && h.source === "ecoledirecte" && (
                                 <Badge variant="outline" className="rounded-full border-dashed border-destructive/40 text-destructive">
                                   en retard
                                 </Badge>

@@ -42,7 +42,7 @@ type SyncStats = {
   syncedAt: number;
 };
 
-/** EcoleDirecte writes subject names in caps, with their own diacritics. */
+/** Normalize "SPANISH" / "ESPAGNOL" / "ESPAGNOL BAS A1" to a stable sort key. */
 function normalizeLabel(label: string): string {
   return label
     .normalize("NFD")
@@ -72,18 +72,46 @@ const SUBJECT_MATCHERS: { key: string; emoji: string; test: RegExp }[] = [
   { key: "eps", emoji: "⚽", test: /EPS|SPORT|EDUCATION PHYSIQUE/ },
 ];
 
-/** Map an EcoleDirecte subject name onto a subject key + emoji. */
-function subjectFor(label: string): { key: string; emoji: string } {
+/** Map an EcoleDirecte subject name onto a subject key + emoji.
+ *
+ * The app's own subject list is fixed, so we map the real names EcoleDirecte
+ * uses onto those keys. Anything unexpected keeps its own stable key + a
+ * neutral emoji, so the dashboard can still show it.
+ */
+function subjectKeyFor(label: string): string {
   const normalized = normalizeLabel(label);
-  const match = SUBJECT_MATCHERS.find((m) => m.test.test(normalized));
-  if (match) return { key: match.key, emoji: match.emoji };
-  const slug =
-    normalized
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 32) || "autre";
-  return { key: slug, emoji: "📘" };
+  for (const m of SUBJECT_MATCHERS) {
+    if (m.test.test(normalized)) return m.key;
+  }
+
+  // A subject name EcoleDirecte uses but we don't have yet: keep it as its
+  // own canonical key so we don't colide with a real subject.
+  return normalized
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 32) || "autre";
+}
+
+function subjectFor(label: string): { key: string; emoji: string } {
+  return {
+    key: subjectKeyFor(label),
+    emoji: labelToEmoji(normalizeLabel(label)),
+  };
+}
+
+/** Best-effort emoji for a subject whose key we just invented. */
+function labelToEmoji(normalized: string): string {
+  if (/HISTOIRE|GEOGRAPHIE|GEO\b|EMC/.test(normalized)) return "🌍";
+  if (/SCIENCE|SCIENCES|BIOLOGIE|PHYSIQUE|CHIMIE|PHYSIC|MATHS?/.test(normalized)) return "📐";
+  if (/ART|MUSIQUE|DESSIN|THEATRE|PECHE?|HISTOIRE/.test(normalized)) return "🎨";
+  if (/SPORT|EPS|EDUCATION PHYSIQUE|PHYSICAL/.test(normalized)) return "⚽";
+  if (/ANGLAIS|ANGLO/.test(normalized)) return "🇬🇧";
+  if (/ESPAGNOL/.test(normalized)) return "🇪🇸";
+  if (/DEUTSCH|ALLEMAND|KOREAN|JAPONAIS/.test(normalized)) return "🇩🇪";
+  if (/LATIN|GREC/.test(normalized)) return "🏛️";
+  if (/INFO|NUMERIQUE|ICT|COMPUTER/.test(normalized)) return "💻";
+  return "📘";
 }
 
 /** Looking up what we need to reach EcoleDirecte for the signed-in student. */

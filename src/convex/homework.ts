@@ -33,7 +33,9 @@ export const list = query({
     ).filter(
       (h) =>
         h.className === className &&
-        (h.dueDate >= todayStr || !h.doneBy.some((id) => id === viewerId)),
+        (h.dueDate >= todayStr ||
+          !h.doneBy.some((id) => id === viewerId) ||
+          h.source === "ecoledirecte"),
     );
 
     rows.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.createdAt - b.createdAt));
