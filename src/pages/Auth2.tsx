@@ -3,7 +3,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -20,10 +19,6 @@ function AuthEmail() {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
   const navigate = useNavigate();
   const startEmail = useAction(api.authEd.startEmailSignIn);
-
-  // Dummy: the email magic link flow is triggered server-side by the provider
-  // (we reuse the same nonce for consistency). Not exposed to the client.
-  void startEmail;
 
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
