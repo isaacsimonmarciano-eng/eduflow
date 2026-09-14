@@ -8,8 +8,9 @@ export type Role = Infer<typeof roleValidator>;
 
 const attachmentValidator = v.object({
   name: v.string(),
-  url: v.string(),
   type: v.string(),
+  url: v.optional(v.string()),
+  storageId: v.optional(v.id("_storage")),
 });
 
 const schema = defineSchema({
