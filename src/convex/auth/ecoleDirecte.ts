@@ -44,13 +44,13 @@ export type EdProfile = {
 export type EdChoice = { label: string; value: string };
 
 export type EdStartResult =
-  | { ok: true; profile: EdProfile }
+  | { ok: true; profile: EdProfile; session: string }
   | { ok: false; twoFa: true; message: undefined; pending: string; question: string; choices: EdChoice[] }
   | { ok: false; twoFa: false; message: string };
 
 /** `finish` can either complete, fail, or surface ANOTHER chained question. */
 export type EdFinishResult =
-  | { ok: true; profile: EdProfile }
+  | { ok: true; profile: EdProfile; session: string }
   | { ok: false; message: string }
   | { ok: false; message: string; pending: string; question: string; choices: EdChoice[] };
 
@@ -370,7 +370,7 @@ export async function ecoleDirecteStart(
     const first = await performLogin(session, identifiant, motdepasse, [], 0);
 
     if (first.kind === "authenticated") {
-      return { ok: true, profile: first.profile };
+      return { ok: true, profile: first.profile, session: session.toPending([], 0) };
     }
     if (first.kind === "question") {
       return {
@@ -479,7 +479,7 @@ export async function ecoleDirecteFinish(
             "Connexion réussie, mais aucun compte élève n'a été trouvé. Ce site est réservé aux élèves.",
         };
       }
-      return { ok: true, profile };
+      return { ok: true, profile, session: session.toPending(answeredFactors, state.answeredCount) };
     }
 
     if (replay.code === 250) {
@@ -633,6 +633,254 @@ function classInfo(source: Record<string, unknown>): { label?: string; id?: stri
     (nested ? str(nested.libelle) ?? str(nested.code) : undefined);
   const id = idOf(source.classeId) ?? (nested ? idOf(nested.id) : undefined);
   return { label, id };
+}
+
+export type EdHomeworkEntry = {
+  sourceId: string;
+  dueDate: string;
+  subjectLabel: string;
+  subjectCode?: string;
+  teacher?: string;
+  text: string;
+  isTest: boolean;
+  edDone: boolean;
+  assignedOn?: string;
+};
+
+export type EdHomeworkResult =
+  | { ok: true; entries: EdHomeworkEntry[]; sessionJson: string }
+  | { ok: false; message: string };
+
+export type EdTimetableSlot = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  subjectLabel: string;
+  subjectCode?: string;
+  teacher?: string;
+  room?: string;
+};
+
+export type EdTimetableResult =
+  | { ok: true; slots: EdTimetableSlot[]; sessionJson: string }
+  | { ok: false; message: string };
+
+function isExpired(res: { code: number; message?: string }): boolean {
+  if (res.code === 521 || res.code === 401 || res.code === 403) return true;
+  const m = res.message?.toLowerCase() ?? "";
+  return m.includes("token invalide") || m.includes("session expir");
+}
+
+function shiftISO(days: number): string {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
+
+function truthy(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
+function collapseHtml(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+  const text = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text.length > 0 ? text.slice(0, 900) : undefined;
+}
+
+async function dayEntries(
+  session: EdSession,
+  studentId: string,
+  date: string,
+): Promise<EdHomeworkEntry[]> {
+  try {
+    const detail = await session.post(
+      `${API_BASE}/${API_VERSION}/Eleves/${studentId}/cahierdetexte/${date}.awp?verbe=get&v=${APP_VERSION}`,
+      {},
+    );
+    if (detail.code !== 200) return [];
+    const matieres = Array.isArray(detail.data.matieres) ? detail.data.matieres : [];
+    const out: EdHomeworkEntry[] = [];
+    for (const raw of matieres) {
+      const m = asRecord(raw);
+      if (!m) continue;
+      const aFaire = asRecord(m.aFaire);
+      if (!aFaire) continue;
+      const subjectLabel = str(m.matiere) ?? "Matière";
+      const homeworkId = idOf(aFaire.idDevoir) ?? idOf(m.id);
+      out.push({
+        sourceId: `${date}:${homeworkId ?? subjectLabel}`,
+        dueDate: date,
+        subjectLabel,
+        subjectCode: str(m.codeMatiere),
+        teacher: str(m.nomProf),
+        text: collapseHtml(decodeB64(aFaire.contenu)) ?? `Devoir de ${subjectLabel}`,
+        isTest: truthy(m.interrogation),
+        edDone: truthy(aFaire.effectue),
+        assignedOn: str(aFaire.donneLe),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function summaryEntries(value: unknown, date: string): EdHomeworkEntry[] {
+  if (!Array.isArray(value)) return [];
+  const out: EdHomeworkEntry[] = [];
+  for (const raw of value) {
+    const a = asRecord(raw);
+    const subjectLabel = str(a?.matiere);
+    if (!a || !subjectLabel) continue;
+    out.push({
+      sourceId: `${date}:${idOf(a.idDevoir) ?? subjectLabel}`,
+      dueDate: date,
+      subjectLabel,
+      subjectCode: str(a.codeMatiere),
+      text: `Devoir de ${subjectLabel}`,
+      isTest: truthy(a.interrogation),
+      edDone: truthy(a.effectue),
+      assignedOn: str(a.donneLe),
+    });
+  }
+  return out;
+}
+
+export async function ecoleDirecteFetchHomework(
+  sessionJson: string,
+  studentId: string,
+): Promise<EdHomeworkResult> {
+  let session: EdSession;
+  try {
+    session = EdSession.fromPending(sessionJson).session;
+  } catch {
+    return { ok: false, message: "Session EcoleDirecte illisible. Reconnecte EcoleDirecte." };
+  }
+  const from = shiftISO(-21);
+  const to = shiftISO(60);
+  const summaryUrl = `${API_BASE}/${API_VERSION}/Eleves/${studentId}/cahierdetexte.awp?verbe=get&v=${APP_VERSION}`;
+  try {
+    let summary = await session.post(summaryUrl, {});
+    if (isExpired(summary)) {
+      const renewed = await session.post(
+        `${API_BASE}/${API_VERSION}/renewtoken.awp?verbe=post&v=${APP_VERSION}`,
+        {},
+      );
+      if (renewed.code === 200 && renewed.token) {
+        session.xToken = renewed.token;
+        summary = await session.post(summaryUrl, {});
+      }
+    }
+    if (isExpired(summary)) {
+      return { ok: false, message: "Ta session EcoleDirecte a expiré. Reconnecte EcoleDirecte." };
+    }
+    if (summary.code !== 200) {
+      return { ok: false, message: friendlyError(summary.code, summary.message) };
+    }
+    const days = Object.entries(summary.data)
+      .filter(
+        ([date, value]) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+          date >= from &&
+          date <= to &&
+          Array.isArray(value) &&
+          value.length > 0,
+      )
+      .map(([date]) => date)
+      .sort()
+      .slice(0, 24);
+    const entries: EdHomeworkEntry[] = [];
+    for (const date of days) {
+      const detailed = await dayEntries(session, studentId, date);
+      entries.push(...(detailed.length > 0 ? detailed : summaryEntries(summary.data[date], date)));
+    }
+    return { ok: true, entries, sessionJson: session.toPending([], 0) };
+  } catch {
+    return { ok: false, message: "Impossible de joindre EcoleDirecte pour les devoirs." };
+  }
+}
+
+export async function ecoleDirecteFetchTimetable(
+  sessionJson: string,
+  studentId: string,
+): Promise<EdTimetableResult> {
+  let session: EdSession;
+  try {
+    session = EdSession.fromPending(sessionJson).session;
+  } catch {
+    return { ok: false, message: "Session EcoleDirecte illisible." };
+  }
+  const dateDebut = shiftISO(0);
+  const dateFin = shiftISO(7);
+  const url = `${API_BASE}/${API_VERSION}/E/${studentId}/emploidutemps.awp?verbe=get&v=${APP_VERSION}`;
+  try {
+    let res = await session.post(url, { dateDebut, dateFin });
+    if (isExpired(res)) {
+      const renewed = await session.post(
+        `${API_BASE}/${API_VERSION}/renewtoken.awp?verbe=post&v=${APP_VERSION}`,
+        {},
+      );
+      if (renewed.code === 200 && renewed.token) {
+        session.xToken = renewed.token;
+        res = await session.post(url, { dateDebut, dateFin });
+      }
+    }
+    if (isExpired(res)) return { ok: false, message: "Session EcoleDirecte expirée." };
+    if (res.code !== 200) return { ok: false, message: friendlyError(res.code, res.message) };
+    const raw = res.data;
+    const courses: unknown[] = Array.isArray(raw) ? raw : Array.isArray((raw as any).cours) ? (raw as any).cours : [];
+    // Some deployments nest under data.cours / data.planning / data[date]
+    const flat: unknown[] = [];
+    if (Array.isArray(raw)) flat.push(...raw);
+    else {
+      for (const v of Object.values(raw)) {
+        if (Array.isArray(v)) flat.push(...v);
+        else if (v && typeof v === "object" && Array.isArray((v as any).cours)) flat.push(...(v as any).cours);
+      }
+    }
+    const slots: EdTimetableSlot[] = [];
+    for (const c of flat) {
+      const r = asRecord(c);
+      if (!r) continue;
+      const start = str(r.startTime) ?? str(r.debut) ?? str(r.start) ?? str(r.start_time) ?? "";
+      const end = str(r.endTime) ?? str(r.fin) ?? str(r.end) ?? "";
+      const date = str(r.date) ?? str(r.jour) ?? str(r.day) ?? "";
+      const subjectLabel = str(r.matiere) ?? str(r.subject) ?? str(r.libelleMatiere) ?? "";
+      if (!date || !start || !subjectLabel) continue;
+      slots.push({
+        date,
+        startTime: start,
+        endTime: end || start,
+        subjectLabel,
+        subjectCode: str(r.codeMatiere) ?? str(r.code) ?? undefined,
+        teacher: str(r.prof) ?? str(r.enseignant) ?? str(r.nomProf) ?? undefined,
+        room: str(r.salle) ?? str(r.classe) ?? str(r.room) ?? undefined,
+      });
+    }
+    // Deduplicate by date+start+subject
+    const seen = new Set<string>();
+    const deduped = slots.filter((s) => {
+      const k = `${s.date}|${s.startTime}|${s.subjectLabel}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    return { ok: true, slots: deduped, sessionJson: session.toPending([], 0) };
+  } catch {
+    return { ok: false, message: "Impossible de récupérer l'emploi du temps." };
+  }
 }
 
 function str(value: unknown): string | undefined {

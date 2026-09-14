@@ -2,25 +2,17 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-/** Upcoming homework for the current user, grouped by due date.
- *  Past-due items that the user hasn't done are kept ("en retard");
- *  past items already done are hidden. */
+/** Upcoming homework for the current user, scoped to class. */
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const viewerId = await getAuthUserId(ctx);
     if (viewerId === null) return [];
-
     const viewer = await ctx.db.get(viewerId);
     const className = viewer?.className;
+    if (!className) return [];
 
-    const today = new Date();
-    const todayStr = [
-      today.getFullYear(),
-      `${today.getMonth() + 1}`.padStart(2, "0"),
-      `${today.getDate()}`.padStart(2, "0"),
-    ].join("-");
-
+    const todayStr = new Date().toISOString().slice(0, 10);
     const rows = (
       await ctx.db
         .query("homework")
@@ -28,7 +20,9 @@ export const list = query({
         .collect()
     ).filter((h) => h.className === className);
 
-    rows.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.createdAt - b.createdAt));
+    rows.sort((a, b) =>
+      a.dueDate === b.dueDate ? a.createdAt - b.createdAt : a.dueDate < b.dueDate ? -1 : 1,
+    );
 
     return rows.map((h) => ({
       _id: h._id,
@@ -39,11 +33,15 @@ export const list = query({
       done: h.doneBy.some((id) => id === viewerId),
       doneCount: h.doneBy.length,
       mine: h.createdBy === viewerId,
+      source: (h.source ?? "manuel") as "ecoledirecte" | "manuel",
+      subjectLabel: h.subjectLabel,
+      teacher: h.teacher,
+      isTest: h.isTest,
+      edDone: h.edDone,
     }));
   },
 });
 
-/** Add a homework entry. `everyone` publishes it to the whole class. */
 export const add = mutation({
   args: {
     subjectKey: v.string(),
@@ -53,17 +51,11 @@ export const add = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (userId === null) {
-      throw new Error("Connecte-toi pour ajouter un devoir.");
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.dueDate)) {
-      throw new Error("Date d'échéance invalide.");
-    }
-    const text = args.text.trim().slice(0, 300);
+    if (userId === null) throw new Error("Connecte-toi pour ajouter un devoir.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(args.dueDate)) throw new Error("Date d'échéance invalide.");
+    const text = args.text.trim().slice(0, 900);
     if (!text) throw new Error("Écris d'abord le devoir.");
-
     const author = await ctx.db.get(userId);
-
     return ctx.db.insert("homework", {
       subjectKey: args.subjectKey,
       dueDate: args.dueDate,
@@ -73,11 +65,11 @@ export const add = mutation({
       doneBy: [],
       createdBy: userId,
       createdAt: Date.now(),
+      source: "manuel",
     });
   },
 });
 
-/** Toggle "done" for the current user on one homework entry. */
 export const toggleDone = mutation({
   args: { id: v.id("homework") },
   handler: async (ctx, { id }) => {
@@ -85,12 +77,9 @@ export const toggleDone = mutation({
     if (userId === null) throw new Error("Connecte-toi d'abord.");
     const h = await ctx.db.get(id);
     if (!h) throw new Error("Ce devoir n'existe plus.");
-
     const done = h.doneBy.some((uid) => uid === userId);
     await ctx.db.patch(id, {
-      doneBy: done
-        ? h.doneBy.filter((uid) => uid !== userId)
-        : [...h.doneBy, userId],
+      doneBy: done ? h.doneBy.filter((uid) => uid !== userId) : [...h.doneBy, userId],
     });
   },
 });
@@ -102,6 +91,10 @@ export const remove = mutation({
     if (userId === null) throw new Error("Connecte-toi d'abord.");
     const h = await ctx.db.get(id);
     if (!h) return;
+    // EcoleDirecte homework is managed by sync — don't delete from UI
+    if (h.source === "ecoledirecte") {
+      throw new Error("Ce devoir vient d'EcoleDirecte — il se met à jour tout seul.");
+    }
     if (h.createdBy !== userId) {
       throw new Error("Tu ne peux supprimer que les devoirs que tu as ajoutés.");
     }

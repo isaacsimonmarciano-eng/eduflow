@@ -1,12 +1,9 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { query } from "./_generated/server";
-import { mutation } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 
 /**
  * Get the current signed in user. Returns null if the user is not signed in.
- * Usage: const signedInUser = await ctx.runQuery(api.authHelpers.currentUser);
- * THIS FUNCTION IS READ-ONLY. DO NOT MODIFY.
  */
 export const currentUser = query({
   args: {},
@@ -48,11 +45,13 @@ export const createFromEd = mutation({
     name: v.string(),
     className: v.string(),
     classRole: v.union(v.literal("eleve"), v.literal("delegue")),
+    email: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return ctx.db.insert("users", {
       name: args.name || "Élève",
       edUserId: args.edUserId,
+      email: args.email ?? (args.edUserId.startsWith("email:") ? args.edUserId.slice(6) : undefined),
       className: args.className,
       classRole: args.classRole,
     });
@@ -71,6 +70,15 @@ export const syncFromClass = mutation({
       ...(name ? { name } : {}),
       className,
     });
+  },
+});
+
+export const patchEmailForEdUser = internalMutation({
+  args: { userId: v.id("users"), email: v.string() },
+  handler: async (ctx, { userId, email }) => {
+    const u = await ctx.db.get(userId);
+    if (!u) return;
+    if (!u.email) await ctx.db.patch(userId, { email });
   },
 });
 
@@ -93,11 +101,11 @@ export const listClassmates = query({
       .map((u) => ({
         _id: u._id,
         name: u.name ?? "Élève",
-        classRole: u.classRole ?? "eleve",
+        classRole: (u.classRole ?? "eleve") as "eleve" | "delegue",
         isMe: u._id === viewerId,
+        isEmail: (u.edUserId ?? "").startsWith("email:"),
       }))
       .sort((a, b) => {
-        // Délégués first, then alphabetical.
         if (a.classRole !== b.classRole) {
           return a.classRole === "delegue" ? -1 : 1;
         }

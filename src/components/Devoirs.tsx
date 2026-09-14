@@ -6,12 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-  CalendarClock,
-  Check,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { CalendarClock, Check, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
@@ -25,6 +20,11 @@ export type Homework = {
   done: boolean;
   doneCount: number;
   mine: boolean;
+  source?: "ecoledirecte" | "manuel";
+  subjectLabel?: string;
+  teacher?: string;
+  isTest?: boolean;
+  edDone?: boolean;
 };
 
 const EMOJI_CHOICES = ["📝", "✏️", "📖", "📐", "🧪", "🌍", "🎤", "🎨", "💻", "⚽", "🧬", "🗺️"];
@@ -94,12 +94,9 @@ export default function Devoirs({
 
   return (
     <section aria-label="Récap des devoirs">
-      {/* Progress banner */}
       <div className="dot-grid pop-card flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
         <div className="flex items-center gap-3">
-          <div className="animate-float-y flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-2xl shadow-sm">
-            🗂️
-          </div>
+          <div className="animate-float-y flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-2xl shadow-sm">🗂️</div>
           <div>
             <h2 className="font-display text-xl font-bold">📋 Le récap des devoirs</h2>
             <p className="text-sm text-muted-foreground">
@@ -112,12 +109,10 @@ export default function Devoirs({
           </div>
         </div>
         <Button onClick={() => setAddOpen(true)} className="gap-2 rounded-full font-bold shadow-sm">
-          <Plus className="size-4" />
-          Ajouter un devoir
+          <Plus className="size-4" /> Ajouter un devoir
         </Button>
       </div>
 
-      {/* Grouped by due date */}
       {homework === undefined ? (
         <div className="mt-5 grid gap-3">
           {[0, 1, 2].map((i) => (
@@ -127,16 +122,12 @@ export default function Devoirs({
       ) : grouped.length === 0 ? (
         <div className="dot-grid pop-card mt-5 flex flex-col items-center justify-center px-6 py-14 text-center">
           <div className="animate-float-y text-5xl">🎈</div>
-          <h3 className="mt-4 font-display text-lg font-bold">
-            Aucun devoir en vue !
-          </h3>
+          <h3 className="mt-4 font-display text-lg font-bold">Aucun devoir en vue !</h3>
           <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Ajoute les devoirs donnés en classe pour ne rien oublier — et coche-les
-            quand c'est fait.
+            Le délégué synchronise les devoirs EcoleDirecte, et chacun peut ajouter ceux que les profs ne notent pas.
           </p>
           <Button onClick={() => setAddOpen(true)} className="mt-5 gap-2 rounded-full font-bold shadow-sm">
-            <Plus className="size-4" />
-            Ajouter le premier devoir
+            <Plus className="size-4" /> Ajouter le premier devoir
           </Button>
         </div>
       ) : (
@@ -156,6 +147,7 @@ export default function Devoirs({
                   {items.map((h) => {
                     const s = subjectOf(h.subjectKey);
                     const late = h.dueDate < new Date().toISOString().slice(0, 10);
+                    const fromEd = h.source === "ecoledirecte";
                     return (
                       <motion.li
                         key={h._id}
@@ -165,63 +157,49 @@ export default function Devoirs({
                         exit={{ opacity: 0, scale: 0.96 }}
                         transition={{ duration: 0.22 }}
                       >
-                        <div
-                          className={`pop-card pop-card-hover flex items-center gap-3.5 p-4 ${
-                            h.done ? "opacity-60" : ""
-                          }`}
-                        >
-                          {/* Toggle done */}
+                        <div className={`pop-card pop-card-hover flex items-center gap-3.5 p-4 ${h.done ? "opacity-60" : ""}`}>
                           <button
                             onClick={() => void onToggle(h._id)}
                             aria-label={h.done ? "Marquer comme à faire" : "Marquer comme fait"}
                             className={`flex size-9 shrink-0 items-center justify-center rounded-xl border-2 text-base transition-all active:scale-90 ${
-                              h.done
-                                ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
-                                : "border-border bg-card hover:border-emerald-400"
+                              h.done ? "border-emerald-500 bg-emerald-500 text-white shadow-sm" : "border-border bg-card hover:border-emerald-400"
                             }`}
                           >
                             {h.done ? <Check className="size-5" /> : h.emoji}
                           </button>
 
                           <div className="min-w-0 flex-1">
-                            <p
-                              className={`text-sm font-bold leading-snug ${
-                                h.done ? "line-through decoration-2" : ""
-                              }`}
-                            >
+                            <p className={`whitespace-pre-wrap text-sm font-bold leading-snug ${h.done ? "line-through decoration-2" : ""}`}>
                               {h.text}
                             </p>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-bold">
-                              <span
-                                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
-                                style={{ backgroundColor: s.soft, color: s.color }}
-                              >
-                                {s.emoji} {s.label}
+                              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5" style={{ backgroundColor: s.soft, color: s.color }}>
+                                {s.emoji} {h.subjectLabel ?? s.label}
                               </span>
+                              {h.teacher && <span className="text-muted-foreground">· {h.teacher}</span>}
+                              {fromEd && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">🎒 EcoleDirecte</span>}
+                              {!fromEd && <span className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground">✍️ ajouté en classe</span>}
+                              {h.isTest && <Badge className="rounded-full bg-amber-100 text-amber-800 hover:bg-amber-100">⚠️ interro</Badge>}
                               {!h.done && late && (
                                 <Badge variant="outline" className="rounded-full border-dashed border-destructive/40 text-destructive">
                                   en retard
                                 </Badge>
-                                )}
+                              )}
                               {h.doneCount > 0 && (
                                 <span className="text-muted-foreground">
-                                  ✅{" "}
-                                  {DONE_STATS.find((d) => h.doneCount >= d.min)?.label ??
-                                    `${h.doneCount} l'ont fait`}
+                                  ✅ {DONE_STATS.find((d) => h.doneCount >= d.min)?.label ?? `${h.doneCount} l'ont fait`}
                                 </span>
                               )}
                             </div>
                           </div>
 
-                          {h.mine && (
+                          {!fromEd && h.mine && (
                             <Button
                               size="icon"
                               variant="ghost"
                               className="size-8 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
                               onClick={() => {
-                                if (window.confirm("Supprimer ce devoir ?")) {
-                                  void onRemove(h._id);
-                                }
+                                if (window.confirm("Supprimer ce devoir ?")) void onRemove(h._id);
                               }}
                               aria-label="Supprimer le devoir"
                             >
@@ -239,16 +217,13 @@ export default function Devoirs({
         </div>
       )}
 
-      {/* Add dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="rounded-3xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 font-display text-xl font-bold">
               <span className="text-xl">📝</span> Nouveau devoir
             </DialogTitle>
-            <DialogDescription>
-              Note-le pour toute la classe : matière, échéance, et ce qu'il faut faire.
-            </DialogDescription>
+            <DialogDescription>Note-le pour toute la classe : matière, échéance, et ce qu'il faut faire.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-1">
             <div className="grid grid-cols-2 gap-3">
@@ -269,12 +244,7 @@ export default function Devoirs({
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="hw-date">Pour le…</Label>
-                <Input
-                  id="hw-date"
-                  type="date"
-                  value={form.dueDate}
-                  onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
-                />
+                <Input id="hw-date" type="date" value={form.dueDate} onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))} />
               </div>
             </div>
 
@@ -301,9 +271,7 @@ export default function Devoirs({
                     onClick={() => setForm((f) => ({ ...f, emoji: e }))}
                     aria-label={`Choisir ${e}`}
                     className={`flex size-10 items-center justify-center rounded-xl border-2 text-lg transition-all active:scale-90 ${
-                      form.emoji === e
-                        ? "border-primary bg-primary/10 shadow-sm"
-                        : "border-transparent bg-muted/60 hover:border-border"
+                      form.emoji === e ? "border-primary bg-primary/10 shadow-sm" : "border-transparent bg-muted/60 hover:border-border"
                     }`}
                   >
                     {e}
@@ -313,11 +281,7 @@ export default function Devoirs({
             </div>
           </div>
           <DialogFooter>
-            <Button
-              onClick={() => void handleAdd()}
-              disabled={saving}
-              className="gap-2 rounded-full font-bold"
-            >
+            <Button onClick={() => void handleAdd()} disabled={saving} className="gap-2 rounded-full font-bold">
               {saving ? "Ajout…" : "Ajouter au récap 🎉"}
             </Button>
           </DialogFooter>

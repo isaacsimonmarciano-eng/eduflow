@@ -2,7 +2,6 @@ import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { Infer, v } from "convex/values";
 
-// default user roles. can add / remove based on the project as needed
 export const ROLES = {
   ADMIN: "admin",
   USER: "user",
@@ -18,40 +17,34 @@ export type Role = Infer<typeof roleValidator>;
 
 const schema = defineSchema(
   {
-    // default auth tables using convex auth.
-    ...authTables, // do not remove or modify
+    ...authTables,
 
-    // the users table is the default users table that is brought in by the authTables
     users: defineTable({
-      name: v.optional(v.string()), // name of the user. do not remove
-      image: v.optional(v.string()), // image of the user. do not remove
-      email: v.optional(v.string()), // email of the user. do not remove
-      emailVerificationTime: v.optional(v.number()), // email verification time. do not remove
-      isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
-
-      role: v.optional(roleValidator), // role of the user. do not remove
-
-      // EcoleDirecte identity (sign-in via the unofficial login API).
-      edUserId: v.optional(v.string()), // stable EcoleDirecte student id
-      className: v.optional(v.string()), // e.g. "3ème B"
-      classRole: v.optional(
-        v.union(v.literal("eleve"), v.literal("delegue")),
-      ),
+      name: v.optional(v.string()),
+      image: v.optional(v.string()),
+      email: v.optional(v.string()),
+      emailVerificationTime: v.optional(v.number()),
+      isAnonymous: v.optional(v.boolean()),
+      role: v.optional(roleValidator),
+      edUserId: v.optional(v.string()),
+      className: v.optional(v.string()),
+      classRole: v.optional(v.union(v.literal("eleve"), v.literal("delegue"))),
+      hwSyncedAt: v.optional(v.number()),
+      timetableSyncedAt: v.optional(v.number()),
     })
-      .index("email", ["email"]) // index for the email. do not remove or modify
+      .index("email", ["email"])
       .index("edUserId", ["edUserId"])
       .index("by_class", ["className"]),
 
-    // Course summaries, one per course session (v1 of the app).
     lessons: defineTable({
-      subjectKey: v.string(), // key from src/lib/subjects.ts
-      date: v.string(), // course date, "YYYY-MM-DD"
+      subjectKey: v.string(),
+      date: v.string(),
       title: v.string(),
       summary: v.string(),
       keyPoints: v.array(v.string()),
-      notes: v.optional(v.string()), // raw dictaphone notes
+      notes: v.optional(v.string()),
       status: v.union(v.literal("draft"), v.literal("published")),
-      className: v.optional(v.string()), // class this summary belongs to
+      className: v.optional(v.string()),
       createdBy: v.id("users"),
       createdAt: v.number(),
       updatedAt: v.number(),
@@ -59,39 +52,80 @@ const schema = defineSchema(
       .index("by_subject_date", ["subjectKey", "date"])
       .index("by_status", ["status"]),
 
-    // Homework entries, one per assignment (due date + subject).
     homework: defineTable({
-      subjectKey: v.string(), // key from src/lib/subjects.ts
-      dueDate: v.string(), // due date, "YYYY-MM-DD"
+      subjectKey: v.string(),
+      dueDate: v.string(),
       text: v.string(),
       emoji: v.string(),
-      className: v.optional(v.string()), // class this homework belongs to
+      className: v.optional(v.string()),
       doneBy: v.array(v.id("users")),
       createdBy: v.id("users"),
       createdAt: v.number(),
-    }).index("by_due_date", ["dueDate"]),
+      source: v.optional(v.union(v.literal("ecoledirecte"), v.literal("manuel"))),
+      sourceId: v.optional(v.string()),
+      subjectLabel: v.optional(v.string()),
+      teacher: v.optional(v.string()),
+      isTest: v.optional(v.boolean()),
+      edDone: v.optional(v.boolean()),
+      syncedAt: v.optional(v.number()),
+    })
+      .index("by_due_date", ["dueDate"])
+      .index("by_class_source", ["className", "sourceId"]),
 
-    // One-time login nonces: our EcoleDirecte verification actions create a
-    // nonce after a successful verification, and the Convex Auth credentials
-    // provider consumes it to open the session. Short-lived, single use.
+    // Pending invites sent by the délégué — anyone with the e-mail can join the class
+    invites: defineTable({
+      email: v.string(),
+      className: v.string(),
+      invitedBy: v.id("users"),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("accepted"),
+        v.literal("revoked"),
+      ),
+      createdAt: v.number(),
+      acceptedAt: v.optional(v.number()),
+      acceptedBy: v.optional(v.id("users")),
+    })
+      .index("by_email", ["email"])
+      .index("by_class", ["className"]),
+
+    // Emploi du temps synced by the délégué from EcoleDirecte
+    timetableSlots: defineTable({
+      className: v.string(),
+      date: v.string(),
+      startTime: v.string(),
+      endTime: v.string(),
+      subjectKey: v.string(),
+      subjectLabel: v.string(),
+      teacher: v.optional(v.string()),
+      room: v.optional(v.string()),
+    })
+      .index("by_class_date", ["className", "date"])
+      .index("by_class", ["className"]),
+
+    // EcoleDirecte session held only by the délégué (never exposed to clients)
+    edSessions: defineTable({
+      edUserId: v.string(),
+      studentId: v.string(),
+      className: v.optional(v.string()),
+      sessionJson: v.string(),
+      updatedAt: v.number(),
+    }).index("by_ed_user", ["edUserId"]),
+
     loginNonces: defineTable({
       nonce: v.string(),
-      edUserId: v.string(), // EcoleDirecte user id the nonce is bound to
+      edUserId: v.string(),
       expiresAt: v.number(),
     }).index("by_nonce", ["nonce"]),
 
-    // Pending double-auth session state (EcoleDirecte cookies between the
-    // question being shown and the answer being submitted). Short-lived.
     pendingLogins: defineTable({
-      handle: v.string(), // random handle handed to the client
+      handle: v.string(),
       cookiesJson: v.string(),
       xGtk: v.optional(v.string()),
       expiresAt: v.number(),
     }).index("by_handle", ["handle"]),
   },
-  {
-    schemaValidation: false,
-  },
+  { schemaValidation: false },
 );
 
 export default schema;
