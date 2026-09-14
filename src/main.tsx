@@ -10,7 +10,7 @@ import "./index.css";
 
 const Landing = lazy(() => import("./pages/Landing.tsx"));
 const AuthPage = lazy(() => import("./pages/Auth.tsx"));
-const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const Dashboard = lazy(() => import("./pages/DashboardV2.tsx"));
 const QuestionsPage = lazy(() => import("./pages/QuestionsPage.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
