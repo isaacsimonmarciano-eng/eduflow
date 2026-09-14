@@ -32,10 +32,10 @@ function resolveRedirectAfterAuth(
 
 const HIGHLIGHTS = [
   {
-    emoji: "🎒",
+    emoji: "🎓",
     soft: "#f0fdf4",
     title: "Ta classe, ton espace",
-    text: "Les résumés et les devoirs sont réservés à ta classe Isaac Marciano.",
+    text: "Les résumés et les devoirs sont réservés à ta classe.",
   },
   {
     emoji: "⭐",
@@ -45,9 +45,10 @@ const HIGHLIGHTS = [
   },
   {
     emoji: "🔒",
-    soft: "#eef2ff",            title: "Deux façons de te connecter",
-            text: "EcoleDirecte ou e-mail : deux façons d'entrer dans la classe.",
-          },
+    soft: "#eef2ff",
+    title: "Vérification réelle",
+    text: "Tes identifiants sont vérifiés par EcoleDirecte à chaque connexion.",
+  },
 ];
 
 type StartResult = {
@@ -357,9 +358,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   <CardTitle className="font-display text-xl">
                     Connexion EcoleDirecte
                   </CardTitle>
-                <CardDescription>
-                  Mêmes identifiants que le site de ton école
-                </CardDescription>
+                  <CardDescription>
+                    Mêmes identifiants que le site de ton école
+                  </CardDescription>
                 </CardHeader>
                 <form onSubmit={handleSubmit}>
                   <CardContent className="grid gap-4">
@@ -434,7 +435,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </form>
                 <CardFooter className="justify-center border-t bg-muted/60 py-3">
                   <p className="text-center text-xs text-muted-foreground">
-    Pas d'EcoleDirecte ? Inscris-toi par e-mail pour rejoindre la classe.
+                    Besoin d'aide ? Tes identifiants sont ceux reçus à la
+                    rentrée.
                   </p>
                 </CardFooter>
               </>

@@ -32,7 +32,7 @@ import {
   UserRound,
   Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
@@ -70,12 +70,8 @@ export default function Dashboard() {
   const toggleHomework = useMutation(api.homework.toggleDone);
   const removeHomework = useMutation(api.homework.remove);
   const summarizeNotes = useAction(api.ai.summarizeNotes);
-  const syncHomework = useAction(api.homeworkSync.sync);
 
   const [selected, setSelected] = useState<string>(SUBJECTS[0].key);
-  const [syncing, setSyncing] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const autoSynced = useRef(false);
   const [view, setView] = useState<"cours" | "devoirs" | "classe">("cours");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<Id<"lessons"> | null>(null);
@@ -214,48 +210,6 @@ export default function Dashboard() {
     navigate("/");
   };
 
-  /** Pull the class's homework from EcoleDirecte. `manual` = button click. */
-  const runSync = async (manual: boolean) => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      const result = await syncHomework({});
-      if (!result.ok) {
-        setSyncError(result.message);
-        if (manual) toast.error(result.message);
-        return;
-      }
-      setSyncError(null);
-      if (result.added > 0) {
-        toast.success(
-          `🎒 ${result.added} nouveau${result.added > 1 ? "x" : ""} devoir${
-            result.added > 1 ? "s" : ""
-          } récupéré${result.added > 1 ? "s" : ""} depuis EcoleDirecte !`,
-        );
-      } else if (manual) {
-        toast.success("Devoirs déjà à jour ✅");
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Synchronisation impossible.";
-      setSyncError(message);
-      if (manual) toast.error(message);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Keep the homework fresh without the student having to think about it:
-  // one automatic sync per visit when the last one is getting stale.
-  useEffect(() => {
-    if (autoSynced.current || !user) return;
-    if (homework === undefined) return;
-    if (Date.now() - (user.hwSyncedAt ?? 0) < 30 * 60 * 1000) return;
-    autoSynced.current = true;
-    void runSync(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, homework]);
-
   const handleAddHomework = async (data: {
     subjectKey: string;
     dueDate: string;
@@ -366,10 +320,6 @@ export default function Dashboard() {
             onAdd={handleAddHomework}
             onToggle={handleToggleHomework}
             onRemove={handleRemoveHomework}
-            onSync={() => runSync(true)}
-            syncing={syncing}
-            lastSyncedAt={user?.hwSyncedAt}
-            syncError={syncError}
           />
         ) : view === "classe" ? (
           <MaClasse

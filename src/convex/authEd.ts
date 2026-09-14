@@ -62,11 +62,6 @@ export const start = action({
     const result = await ecoleDirecteStart(identifiant, motdepasse);
 
     if (result.ok) {
-      await ctx.runMutation(internal.authEd.storeEdSession, {
-        edUserId: result.profile.edUserId,
-        className: result.profile.className,
-        sessionJson: result.session,
-      });
       return {
         ok: true,
         edUserId: result.profile.edUserId,
@@ -174,12 +169,6 @@ export const finish = action({
 
     await ctx.runMutation(internal.authEd.deletePending, { handle });
 
-    await ctx.runMutation(internal.authEd.storeEdSession, {
-      edUserId: result.profile.edUserId,
-      className: result.profile.className,
-      sessionJson: result.session,
-    });
-
     return {
       ok: true,
       edUserId: result.profile.edUserId,
@@ -271,43 +260,6 @@ export const deletePending = internalMutation({
       .withIndex("by_handle", (q) => q.eq("handle", handle))
       .first();
     if (row) await ctx.db.delete(row._id);
-  },
-});
-
-/**
- * Keep the student's live EcoleDirecte session so homework can be re-synced
- * later (refreshed on every sign-in). Server-side only, never sent to the
- * browser and never exposed by a public query.
- */
-export const storeEdSession = internalMutation({
-  args: {
-    edUserId: v.string(),
-    className: v.optional(v.string()),
-    sessionJson: v.string(),
-  },
-  handler: async (ctx, { edUserId, className, sessionJson }) => {
-    const existing = await ctx.db
-      .query("edSessions")
-      .withIndex("by_ed_user", (q) => q.eq("edUserId", edUserId))
-      .first();
-
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        sessionJson,
-        // Keep a known class name if a sign-in could not read it.
-        ...(className ? { className } : {}),
-        updatedAt: Date.now(),
-      });
-      return;
-    }
-
-    await ctx.db.insert("edSessions", {
-      edUserId,
-      studentId: edUserId,
-      className,
-      sessionJson,
-      updatedAt: Date.now(),
-    });
   },
 });
 
