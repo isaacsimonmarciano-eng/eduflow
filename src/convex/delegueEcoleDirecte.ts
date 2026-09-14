@@ -109,7 +109,7 @@ export const viewerContext = internalQuery({
   handler: async (ctx, { userId }) => {
     const viewer = await ctx.db.get(userId);
     if (!viewer) return null;
-    if (viewer.classRole !== "delegue") return null;
+    if (!viewer.className) return null;
     const edUserId = viewer.edUserId;
     if (!edUserId || edUserId.startsWith("email:")) return null;
     const session = await ctx.db
@@ -284,8 +284,8 @@ export const saveDelegueSession = action({
     const me = (await ctx.runQuery(internal.delegueEcoleDirecte.whoAmI, { userId })) as
       | { className?: string; classRole?: string }
       | null;
-    if (!me || me.classRole !== "delegue") {
-      throw new Error("Seul le délégué peut connecter EcoleDirecte.");
+    if (!me?.className) {
+      throw new Error("Rejoins d'abord une classe avant de connecter EcoleDirecte.");
     }
     const { ecoleDirecteStart } = await import("./auth/ecoleDirecte");
     const res = await ecoleDirecteStart(identifiant, motdepasse);
@@ -338,8 +338,8 @@ export const finishDelegueSession = action({
     const me = (await ctx.runQuery(internal.delegueEcoleDirecte.whoAmI, { userId })) as
       | { className?: string; classRole?: string }
       | null;
-    if (!me || me.classRole !== "delegue") {
-      throw new Error("Seul le délégué peut connecter EcoleDirecte.");
+    if (!me?.className) {
+      throw new Error("Rejoins d'abord une classe avant de connecter EcoleDirecte.");
     }
     const pending = await ctx.runQuery(internal.authEd.getPending, { handle });
     if (!pending) {

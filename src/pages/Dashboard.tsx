@@ -946,8 +946,9 @@ function MaClasse({
         )}
       </div>
 
-      {isDelegue && (
-        <div className="grid gap-4 lg:grid-cols-2">
+      {/* Inviter = réservé délégué, EcoleDirecte = pour tout le monde */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {isDelegue && (
           <div className="pop-card p-5 sm:p-6">
             <h3 className="flex items-center gap-2 font-display text-base font-bold">
               <Mail className="size-4 text-primary" />
@@ -993,15 +994,20 @@ function MaClasse({
               </div>
             )}
           </div>
-
-          <div className="pop-card p-5 sm:p-6">
+        )}
+        <div className="pop-card p-5 sm:p-6">
             <h3 className="flex items-center gap-2 font-display text-base font-bold">
               <ShieldCheck className="size-4 text-emerald-600" />
-              EcoleDirecte — outil délégué
+              EcoleDirecte — synchronisation
             </h3>
+            {!isDelegue && (
+              <p className="mt-1 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+                ✨ Connecte ton EcoleDirecte : tes devoirs + ton emploi du temps alimentent toute la classe.
+              </p>
+            )}
             <p className="mt-1 text-sm text-muted-foreground">
-              Connecte ton compte EcoleDirecte une fois : tu synchronises ensuite les devoirs et l'emploi du temps pour
-              toute la classe en un clic.
+              Connecte ton EcoleDirecte une fois : tu synchronises les devoirs et l'emploi du temps pour toute la
+              classe en un clic.
             </p>
             <div className="mt-4 grid gap-3">
               <div className="grid gap-1.5">
@@ -1061,7 +1067,6 @@ function MaClasse({
             </div>
           </div>
         </div>
-      )}
 
       {classmates === undefined ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
