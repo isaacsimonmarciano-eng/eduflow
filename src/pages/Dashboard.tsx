@@ -1,3 +1,4 @@
+// fix: EcoleDirecte pour tout le monde - build sync
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
