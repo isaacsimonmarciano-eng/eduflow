@@ -46,9 +46,8 @@ const HIGHLIGHTS = [
   {
     emoji: "🔒",
     soft: "#eef2ff",
-    title: "Deux façons de entrer",
-    text: "EcoleDirecte ou e-mail. Pas besoin de connexion si tu n'es pas encore
-                  dans la classe.",
+    title: "Deux façons de connexion",
+    text: "EcoleDirecte ou e-mail. Pas besoin si tu n'es pas encore",
   },
 ];
 
