@@ -50,7 +50,7 @@ export type EdStartResult =
 export type EdFinishResult =
   | { ok: true; profile: EdProfile }
   | { ok: false; message: string }
-  | { ok: false; message: undefined; pending: string; question: string; choices: EdChoice[] };
+  | { ok: false; message: string; pending: string; question: string; choices: EdChoice[] };
 
 /**
  * Serializable snapshot of one login-attempt chain: cookies + GTK + the
@@ -60,6 +60,7 @@ export type EdFinishResult =
 export type EdPending = {
   cookies: Record<string, string>;
   xGtk?: string;
+  xToken?: string;
   twoFaToken?: string;
   answeredFactors: { cn: string; cv: string; uniq: boolean }[];
   /** How many questions have been answered — bounds a server that keeps asking. */
@@ -77,6 +78,7 @@ type EdCode = {
 class EdSession {
   cookies = new Map<string, string>();
   xGtk: string | undefined;
+  xToken: string | undefined;
   twoFaToken: string | undefined;
 
   ingest(headers: Headers) {
@@ -92,6 +94,8 @@ class EdSession {
     }
     const gtk = headers.get("X-GTK");
     if (gtk) this.xGtk = gtk;
+    const token = headers.get("X-Token");
+    if (token) this.xToken = token;
     const twoFa = headers.get("2FA-Token");
     if (twoFa) this.twoFaToken = twoFa;
   }
@@ -113,6 +117,7 @@ class EdSession {
     if ((opts.includeGtk ?? true) && this.gtkValue()) {
       h["X-GTK"] = this.gtkValue()!;
     }
+    if (this.xToken) h["X-Token"] = this.xToken;
     if (this.twoFaToken) h["2FA-Token"] = this.twoFaToken;
     return h;
   }
@@ -138,6 +143,11 @@ class EdSession {
       });
       this.ingest(res.headers);
       const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      // The pending 2FA / session token can also arrive in the body — keep it
+      // so the double-auth answer and the follow-up calls present it.
+      if (typeof body.token === "string" && body.token) {
+        this.xToken = body.token;
+      }
       return {
         code: typeof body.code === "number" ? body.code : 0,
         message: typeof body.message === "string" ? body.message : undefined,
@@ -153,6 +163,7 @@ class EdSession {
     return JSON.stringify({
       cookies: Object.fromEntries(this.cookies),
       xGtk: this.xGtk,
+      xToken: this.xToken,
       twoFaToken: this.twoFaToken,
       answeredFactors,
       answeredCount,
@@ -166,6 +177,7 @@ class EdSession {
       s.cookies.set(k, v);
     }
     s.xGtk = parsed.xGtk;
+    s.xToken = parsed.xToken;
     s.twoFaToken = parsed.twoFaToken;
     return { session: s, pending: parsed };
   }
@@ -235,13 +247,11 @@ function friendlyError(code: number, message?: string): string {
   if (code === 520) {
     return "Tu dois d'abord accepter la charte d'utilisation sur le site EcoleDirecte.";
   }
-  return (
-    message ||
-    "EcoleDirecte n'a pas répondu comme prévu. Réessaie dans un instant."
-  );
+  if (message) return `${message} (code ${code})`;
+  return "EcoleDirecte n'a pas répondu comme prévu. Réessaie dans un instant.";
 }
 
-const MAX_CHAINED_CHALLENGES = 4;
+const MAX_CHAINED_CHALLENGES = 3;
 
 type LoginOutcome =
   | { kind: "authenticated"; profile: EdProfile }
@@ -480,7 +490,7 @@ export async function ecoleDirecteFinish(
         .map((value) => ({ label: decodeB64(value) ?? value, value }));
       return {
         ok: false,
-        message: undefined,
+        message: "EcoleDirecte demande une autre vérification d'identité.",
         pending: session.toPending(answeredFactors, state.answeredCount + 1),
         question,
         choices,

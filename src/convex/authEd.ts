@@ -115,7 +115,7 @@ export const finish = action({
     | { ok: false; message: string }
     | {
         ok: false;
-        message: undefined;
+        message: string;
         question: string;
         choices: { label: string; value: string }[];
       }
@@ -146,7 +146,7 @@ export const finish = action({
       });
       return {
         ok: false,
-        message: undefined,
+        message: result.message,
         question: result.question,
         choices: result.choices,
       };
