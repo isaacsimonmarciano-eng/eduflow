@@ -183,7 +183,19 @@ class EdSession {
   }
 }
 
+/**
+ * Bootstrap a fresh GTK.
+ *
+ * EcoleDirecte issues a brand-new cookie set on every `login.awp?gtk=1` call,
+ * and it only accepts a login POST that carries the GTK/session cookies of the
+ * MOST RECENT bootstrap. So this has to be replayed right before every login
+ * POST — including the final replay that completes a double auth. Skipping it
+ * makes the API answer code 505 ("identifiant et/ou mot de passe invalide !")
+ * even when the credentials and the challenge answer are perfectly correct.
+ */
 async function bootstrap(session: EdSession): Promise<void> {
+  // Drop the cached header value so X-GTK falls back to the freshly issued cookie.
+  session.xGtk = undefined;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -192,7 +204,11 @@ async function bootstrap(session: EdSession): Promise<void> {
       { headers: session.headers(), redirect: "manual", signal: controller.signal },
     );
     session.ingest(res.headers);
-    await res.text().catch(() => "");
+    // Some bootstrap responses carry the GTK in the body instead of a cookie.
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (typeof body.token === "string" && body.token) {
+      session.xGtk = body.token;
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -423,6 +439,10 @@ export async function ecoleDirecteFinish(
       { cn, cv, uniq: false },
     ].slice(-10);
 
+    // Fresh GTK + fresh session cookies before the replay: the answer was
+    // accepted, but this login POST is only honoured on the newest bootstrap.
+    await bootstrap(session);
+
     let replay = await session.post(
       `${API_BASE}/${API_VERSION}/login.awp?v=${APP_VERSION}`,
       {
@@ -438,8 +458,10 @@ export async function ecoleDirecteFinish(
 
     // Documented quirk: with a non-empty fa list, EcoleDirecte can answer a
     // CORRECT challenge with "Identifiant et/ou mot de passe invalide !" (505).
-    // The official client retries once without the fa list.
+    // The official client then retries once from a clean bootstrap, without
+    // replaying the remembered-factor list.
     if (replay.code === 505 && answeredFactors.length > 0) {
+      await bootstrap(session);
       replay = await session.post(
         `${API_BASE}/${API_VERSION}/login.awp?v=${APP_VERSION}`,
         { identifiant, motdepasse, isReLogin: false, uuid: "", fa: [] },
@@ -497,6 +519,14 @@ export async function ecoleDirecteFinish(
       };
     }
 
+    // Nothing else can be salvaged on a fresh bootstrap: surface the failure.
+    if (replay.code === 505) {
+      return {
+        ok: false,
+        message:
+          "EcoleDirecte a refusé la reconnexion après la vérification d'identité. Réessaie la question, ou reconnecte-toi depuis le début.",
+      };
+    }
     return { ok: false, message: friendlyError(replay.code, replay.message) };
   } catch {
     return {

@@ -21,6 +21,9 @@ import {
  *     open the real session.
  */
 
+/** How long a pending verification session stays usable. */
+const PENDING_TTL_MS = 10 * 60 * 1000;
+
 function randomToken(bytes = 24): string {
   const arr = new Uint8Array(bytes);
   crypto.getRandomValues(arr);
@@ -77,7 +80,7 @@ export const start = action({
       await ctx.runMutation(internal.authEd.storePending, {
         handle,
         cookiesJson: result.pending,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        expiresAt: Date.now() + PENDING_TTL_MS,
       });
       return {
         ok: false,
@@ -142,7 +145,7 @@ export const finish = action({
       await ctx.runMutation(internal.authEd.updatePending, {
         handle,
         cookiesJson: result.pending,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        expiresAt: Date.now() + PENDING_TTL_MS,
       });
       return {
         ok: false,
@@ -152,11 +155,19 @@ export const finish = action({
       };
     }
 
-    await ctx.runMutation(internal.authEd.deletePending, { handle });
-
     if (!result.ok) {
+      // Keep the pending session alive so the student can simply pick the right
+      // answer again instead of retyping their credentials (each login attempt
+      // counts against EcoleDirecte's own attempt limit).
+      await ctx.runMutation(internal.authEd.updatePending, {
+        handle,
+        cookiesJson: pending.cookiesJson,
+        expiresAt: Date.now() + PENDING_TTL_MS,
+      });
       return { ok: false, message: result.message ?? "Échec de la vérification." };
     }
+
+    await ctx.runMutation(internal.authEd.deletePending, { handle });
 
     return {
       ok: true,
