@@ -113,6 +113,12 @@ export const finish = action({
   ): Promise<
     | { ok: true; edUserId: string; name: string; className: string }
     | { ok: false; message: string }
+    | {
+        ok: false;
+        message: undefined;
+        question: string;
+        choices: { label: string; value: string }[];
+      }
   > => {
     const pending = await ctx.runQuery(internal.authEd.getPending, { handle });
     if (!pending) {
@@ -129,10 +135,27 @@ export const finish = action({
       pending.cookiesJson,
       choixValue,
     );
+
+    // EcoleDirecte can chain another question — refresh the stored session
+    // state and surface the new question to the user.
+    if (!result.ok && "pending" in result && result.pending) {
+      await ctx.runMutation(internal.authEd.updatePending, {
+        handle,
+        cookiesJson: result.pending,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
+      return {
+        ok: false,
+        message: undefined,
+        question: result.question,
+        choices: result.choices,
+      };
+    }
+
     await ctx.runMutation(internal.authEd.deletePending, { handle });
 
     if (!result.ok) {
-      return { ok: false, message: result.message };
+      return { ok: false, message: result.message ?? "Échec de la vérification." };
     }
 
     return {
@@ -203,6 +226,18 @@ export const getPending = internalQuery({
       .first();
     if (!row || row.expiresAt < Date.now()) return null;
     return { cookiesJson: row.cookiesJson };
+  },
+});
+
+export const updatePending = internalMutation({
+  args: { handle: v.string(), cookiesJson: v.string(), expiresAt: v.number() },
+  handler: async (ctx, { handle, cookiesJson, expiresAt }) => {
+    const row = await ctx.db
+      .query("pendingLogins")
+      .withIndex("by_handle", (q) => q.eq("handle", handle))
+      .first();
+    if (!row) return;
+    await ctx.db.patch(row._id, { cookiesJson, expiresAt });
   },
 });
 

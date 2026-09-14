@@ -166,7 +166,18 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
         choixValue: choix,
       });
       if (!result.ok) {
-        setError(result.message);
+        if ("question" in result && result.question) {
+          // Chained question: EcoleDirecte asks another one right away.
+          setTwoFa({
+            handle: twoFa.handle,
+            question: result.question,
+            choices: result.choices,
+          });
+          setChoix(null);
+          setIsLoading(false);
+          return;
+        }
+        setError(result.message ?? "Vérification impossible. Réessaie.");
         setIsLoading(false);
         return;
       }
