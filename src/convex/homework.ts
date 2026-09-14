@@ -21,12 +21,20 @@ export const list = query({
       `${today.getDate()}`.padStart(2, "0"),
     ].join("-");
 
+    // A month back, so late homework still surfaces ("en retard"); anything
+    // older than that, or already done, is noise.
+    const since = new Date(today.getTime() - 31 * 86_400_000).toISOString().slice(0, 10);
+
     const rows = (
       await ctx.db
         .query("homework")
-        .withIndex("by_due_date", (q) => q.gte("dueDate", todayStr))
+        .withIndex("by_due_date", (q) => q.gte("dueDate", since))
         .collect()
-    ).filter((h) => h.className === className);
+    ).filter(
+      (h) =>
+        h.className === className &&
+        (h.dueDate >= todayStr || !h.doneBy.some((id) => id === viewerId)),
+    );
 
     rows.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.createdAt - b.createdAt));
 
@@ -36,9 +44,16 @@ export const list = query({
       dueDate: h.dueDate,
       text: h.text,
       emoji: h.emoji,
+      source: h.source ?? "manuel",
+      subjectLabel: h.subjectLabel,
+      teacher: h.teacher,
+      isTest: h.isTest ?? false,
+      edDone: h.edDone ?? false,
       done: h.doneBy.some((id) => id === viewerId),
       doneCount: h.doneBy.length,
       mine: h.createdBy === viewerId,
+      // Homework synced from EcoleDirecte isn't ours to delete.
+      canDelete: (h.source ?? "manuel") !== "ecoledirecte" && h.createdBy === viewerId,
     }));
   },
 });
@@ -73,6 +88,7 @@ export const add = mutation({
       doneBy: [],
       createdBy: userId,
       createdAt: Date.now(),
+      source: "manuel",
     });
   },
 });
@@ -102,6 +118,11 @@ export const remove = mutation({
     if (userId === null) throw new Error("Connecte-toi d'abord.");
     const h = await ctx.db.get(id);
     if (!h) return;
+    if ((h.source ?? "manuel") === "ecoledirecte") {
+      throw new Error(
+        "Ce devoir vient d'EcoleDirecte : il disparaîtra tout seul de la liste.",
+      );
+    }
     if (h.createdBy !== userId) {
       throw new Error("Tu ne peux supprimer que les devoirs que tu as ajoutés.");
     }

@@ -37,6 +37,7 @@ const schema = defineSchema(
       classRole: v.optional(
         v.union(v.literal("eleve"), v.literal("delegue")),
       ),
+      hwSyncedAt: v.optional(v.number()), // last EcoleDirecte homework sync
     })
       .index("email", ["email"]) // index for the email. do not remove or modify
       .index("edUserId", ["edUserId"])
@@ -69,7 +70,32 @@ const schema = defineSchema(
       doneBy: v.array(v.id("users")),
       createdBy: v.id("users"),
       createdAt: v.number(),
-    }).index("by_due_date", ["dueDate"]),
+
+      // Where the entry comes from: synced from EcoleDirecte's cahier de textes
+      // or added by hand for the teachers who don't post there.
+      source: v.optional(
+        v.union(v.literal("ecoledirecte"), v.literal("manuel")),
+      ),
+      sourceId: v.optional(v.string()), // stable EcoleDirecte key, for de-duplication
+      subjectLabel: v.optional(v.string()), // as spelled by EcoleDirecte
+      teacher: v.optional(v.string()),
+      isTest: v.optional(v.boolean()), // interrogation / contrôle
+      edDone: v.optional(v.boolean()), // already ticked as done on EcoleDirecte
+      syncedAt: v.optional(v.number()),
+    })
+      .index("by_due_date", ["dueDate"])
+      .index("by_class_source", ["className", "sourceId"]),
+
+    // EcoleDirecte sessions of signed-in students. Kept server-side (never
+    // exposed to the client) so homework can be re-synced without asking for
+    // the password again. Refreshed on every sign-in.
+    edSessions: defineTable({
+      edUserId: v.string(),
+      studentId: v.string(),
+      className: v.optional(v.string()),
+      sessionJson: v.string(), // cookies + GTK + token snapshot
+      updatedAt: v.number(),
+    }).index("by_ed_user", ["edUserId"]),
 
     // One-time login nonces: our EcoleDirecte verification actions create a
     // nonce after a successful verification, and the Convex Auth credentials

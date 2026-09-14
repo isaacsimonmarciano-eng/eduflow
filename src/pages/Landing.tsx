@@ -203,9 +203,19 @@ export default function Landing() {
                 Plus un seul devoir oublié
               </h2>
               <p className="mt-3 max-w-md text-muted-foreground">
-                Chaque devoir est noté avec son emoji, sa matière et sa date. Coche
-                quand c'est fait, et vois qui de la classe l'a déjà bouclé.
+                Tes devoirs EcoleDirecte remontent tout seuls, avec leur matière et
+                leur date. Tu peux aussi en ajouter à la main pour les profs qui
+                n'utilisent pas EcoleDirecte. Coche quand c'est fait, et vois qui
+                de la classe l'a déjà bouclé.
               </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+                  🎒 Synchro EcoleDirecte automatique
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground">
+                  ✍️ Ajout manuel pour la classe
+                </span>
+              </div>
               <div className="mt-6 space-y-2.5">
                 {[
                   { emoji: "📐", text: "Maths · exercices 12 à 15 p. 84", done: true, soft: "#eef2ff" },

@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Check,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -22,9 +23,15 @@ export type Homework = {
   dueDate: string;
   text: string;
   emoji: string;
+  source: "ecoledirecte" | "manuel";
+  subjectLabel?: string;
+  teacher?: string;
+  isTest: boolean;
+  edDone: boolean;
   done: boolean;
   doneCount: number;
   mine: boolean;
+  canDelete: boolean;
 };
 
 const EMOJI_CHOICES = ["📝", "✏️", "📖", "📐", "🧪", "🌍", "🎤", "🎨", "💻", "⚽", "🧬", "🗺️"];
@@ -33,6 +40,16 @@ const DONE_STATS = [
   { min: 2, label: "2 camarades l'ont fait" },
   { min: 1, label: "1 camarade l'a fait" },
 ];
+
+/** "il y a 4 min" — the UI stays honest about how fresh the sync is. */
+function sinceLabel(ts: number): string {
+  const mins = Math.round((Date.now() - ts) / 60_000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  return `il y a ${Math.round(hours / 24)} j`;
+}
 
 function daysLabel(iso: string): string {
   const days = daysUntil(iso);
@@ -46,11 +63,19 @@ export default function Devoirs({
   onAdd,
   onToggle,
   onRemove,
+  onSync,
+  syncing,
+  lastSyncedAt,
+  syncError,
 }: {
   homework: Homework[] | undefined;
   onAdd: (data: { subjectKey: string; dueDate: string; text: string; emoji: string }) => Promise<void>;
   onToggle: (id: Id<"homework">) => Promise<void>;
   onRemove: (id: Id<"homework">) => Promise<void>;
+  onSync: () => Promise<void>;
+  syncing: boolean;
+  lastSyncedAt?: number;
+  syncError?: string | null;
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({
@@ -109,12 +134,32 @@ export default function Devoirs({
                   : "Rien à faire pour le moment. Profite !"
                 : `${pendingCount} devoir${pendingCount > 1 ? "s" : ""} à faire`}
             </p>
+            <p className="mt-1 text-xs font-semibold text-muted-foreground">
+              {syncError ? (
+                <span className="text-amber-700">⚠️ {syncError}</span>
+              ) : lastSyncedAt ? (
+                <>🎒 EcoleDirecte synchronisé {sinceLabel(lastSyncedAt)}</>
+              ) : (
+                <>🎒 Les devoirs EcoleDirecte arrivent automatiquement</>
+              )}
+            </p>
           </div>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="gap-2 rounded-full font-bold shadow-sm">
-          <Plus className="size-4" />
-          Ajouter un devoir
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => void onSync()}
+            disabled={syncing}
+            className="gap-2 rounded-full font-bold"
+          >
+            <RefreshCw className={syncing ? "size-4 animate-spin" : "size-4"} />
+            {syncing ? "Synchronisation…" : "Synchroniser"}
+          </Button>
+          <Button onClick={() => setAddOpen(true)} className="gap-2 rounded-full font-bold shadow-sm">
+            <Plus className="size-4" />
+            Ajouter un devoir
+          </Button>
+        </div>
       </div>
 
       {/* Grouped by due date */}
@@ -185,24 +230,48 @@ export default function Devoirs({
 
                           <div className="min-w-0 flex-1">
                             <p
-                              className={`text-sm font-bold leading-snug ${
+                              className={`whitespace-pre-line text-sm font-bold leading-snug ${
                                 h.done ? "line-through decoration-2" : ""
                               }`}
                             >
                               {h.text}
                             </p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs font-bold">
                               <span
                                 className="inline-flex items-center gap-1 rounded-full px-2 py-0.5"
                                 style={{ backgroundColor: s.soft, color: s.color }}
                               >
-                                {s.emoji} {s.label}
+                                {s.emoji} {h.subjectLabel ?? s.label}
                               </span>
+                              {h.source === "ecoledirecte" ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-700">
+                                  🎒 EcoleDirecte
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-muted-foreground">
+                                  ✍️ ajouté en classe
+                                </span>
+                              )}
+                              {h.isTest && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-rose-700">
+                                  ⚠️ interro
+                                </span>
+                              )}
+                              {h.teacher && (
+                                <span className="text-muted-foreground">
+                                  👩‍🏫 {h.teacher}
+                                </span>
+                              )}
                               {!h.done && late && (
                                 <Badge variant="outline" className="rounded-full border-dashed border-destructive/40 text-destructive">
                                   en retard
                                 </Badge>
                                 )}
+                              {h.edDone && !h.done && (
+                                <span className="text-emerald-600">
+                                  ✅ déjà fait sur EcoleDirecte
+                                </span>
+                              )}
                               {h.doneCount > 0 && (
                                 <span className="text-muted-foreground">
                                   ✅{" "}
@@ -213,7 +282,7 @@ export default function Devoirs({
                             </div>
                           </div>
 
-                          {h.mine && (
+                          {h.canDelete && (
                             <Button
                               size="icon"
                               variant="ghost"

@@ -44,13 +44,13 @@ export type EdProfile = {
 export type EdChoice = { label: string; value: string };
 
 export type EdStartResult =
-  | { ok: true; profile: EdProfile }
+  | { ok: true; profile: EdProfile; session: string }
   | { ok: false; twoFa: true; message: undefined; pending: string; question: string; choices: EdChoice[] }
   | { ok: false; twoFa: false; message: string };
 
 /** `finish` can either complete, fail, or surface ANOTHER chained question. */
 export type EdFinishResult =
-  | { ok: true; profile: EdProfile }
+  | { ok: true; profile: EdProfile; session: string }
   | { ok: false; message: string }
   | { ok: false; message: string; pending: string; question: string; choices: EdChoice[] };
 
@@ -370,7 +370,7 @@ export async function ecoleDirecteStart(
     const first = await performLogin(session, identifiant, motdepasse, [], 0);
 
     if (first.kind === "authenticated") {
-      return { ok: true, profile: first.profile };
+      return { ok: true, profile: first.profile, session: session.toPending([], 0) };
     }
     if (first.kind === "question") {
       return {
@@ -479,7 +479,11 @@ export async function ecoleDirecteFinish(
             "Connexion réussie, mais aucun compte élève n'a été trouvé. Ce site est réservé aux élèves.",
         };
       }
-      return { ok: true, profile };
+      return {
+        ok: true,
+        profile,
+        session: session.toPending(answeredFactors, state.answeredCount + 1),
+      };
     }
 
     if (replay.code === 250) {
@@ -601,6 +605,210 @@ async function extractStudentProfile(
   }
 
   return profile;
+}
+
+// ── Cahier de textes (homework sync) ─────────────────────────
+
+export type EdHomeworkEntry = {
+  /** Stable key used to de-duplicate a class's synced homework. */
+  sourceId: string;
+  dueDate: string; // "YYYY-MM-DD" — the date the work is for
+  subjectLabel: string;
+  subjectCode?: string;
+  teacher?: string;
+  text: string;
+  isTest: boolean;
+  edDone: boolean;
+  assignedOn?: string;
+};
+
+export type EdHomeworkResult =
+  | { ok: true; entries: EdHomeworkEntry[]; sessionJson: string }
+  | { ok: false; message: string };
+
+/** Tokens expire after a few hours; EcoleDirecte says so with code 521. */
+function isExpired(res: { code: number; message?: string }): boolean {
+  if (res.code === 521 || res.code === 401 || res.code === 403) return true;
+  const message = res.message?.toLowerCase() ?? "";
+  return message.includes("token invalide") || message.includes("session expir");
+}
+
+/** Upper bound on per-day detail requests, to keep one sync cheap. */
+const MAX_DETAIL_DAYS = 24;
+
+function shiftISO(days: number): string {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
+
+/**
+ * Read the student's "cahier de textes": one summary call lists the days that
+ * carry homework, then one call per day yields the actual assignment text
+ * (base64-encoded HTML). Recent past days are included so late work still
+ * shows up with an "en retard" badge.
+ */
+export async function ecoleDirecteFetchHomework(
+  sessionJson: string,
+  studentId: string,
+): Promise<EdHomeworkResult> {
+  let session: EdSession;
+  try {
+    session = EdSession.fromPending(sessionJson).session;
+  } catch {
+    return { ok: false, message: "Session EcoleDirecte illisible. Reconnecte-toi." };
+  }
+
+  const from = shiftISO(-21);
+  const to = shiftISO(60);
+
+  const summaryUrl = `${API_BASE}/${API_VERSION}/Eleves/${studentId}/cahierdetexte.awp?verbe=get&v=${APP_VERSION}`;
+
+  try {
+    let summary = await session.post(summaryUrl, {});
+
+    // An expired token is refreshed by EcoleDirecte itself — no password, no
+    // new login, exactly like the official client does mid-session.
+    if (isExpired(summary)) {
+      const renewed = await session.post(
+        `${API_BASE}/${API_VERSION}/renewtoken.awp?verbe=post&v=${APP_VERSION}`,
+        {},
+      );
+      if (renewed.code === 200 && renewed.token) {
+        session.xToken = renewed.token;
+        summary = await session.post(summaryUrl, {});
+      }
+    }
+
+    if (isExpired(summary)) {
+      return {
+        ok: false,
+        message:
+          "Ta session EcoleDirecte a expiré. Reconnecte-toi pour resynchroniser les devoirs.",
+      };
+    }
+    if (summary.code !== 200) {
+      return { ok: false, message: friendlyError(summary.code, summary.message) };
+    }
+
+    const days = Object.entries(summary.data)
+      .filter(([date, value]) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+        date >= from &&
+        date <= to &&
+        Array.isArray(value) &&
+        value.length > 0,
+      )
+      .map(([date]) => date)
+      .sort();
+
+    const entries: EdHomeworkEntry[] = [];
+    for (const date of days.slice(0, MAX_DETAIL_DAYS)) {
+      const detailed = await dayEntries(session, studentId, date);
+      // Fall back to the summary entry (subject only, no text) when the detail
+      // call fails, so a homework is never silently missing.
+      entries.push(
+        ...(detailed.length > 0
+          ? detailed
+          : summaryEntries(summary.data[date], date)),
+      );
+    }
+
+    // Hand the (possibly refreshed) session back so it can be persisted.
+    return { ok: true, entries, sessionJson: session.toPending([], 0) };
+  } catch {
+    return {
+      ok: false,
+      message:
+        "Impossible de joindre EcoleDirecte pour synchroniser les devoirs. Réessaie dans un instant.",
+    };
+  }
+}
+
+/** One day of the cahier de textes, with the assignment text. */
+async function dayEntries(
+  session: EdSession,
+  studentId: string,
+  date: string,
+): Promise<EdHomeworkEntry[]> {
+  try {
+    const detail = await session.post(
+      `${API_BASE}/${API_VERSION}/Eleves/${studentId}/cahierdetexte/${date}.awp?verbe=get&v=${APP_VERSION}`,
+      {},
+    );
+    if (detail.code !== 200) return [];
+
+    const matieres = Array.isArray(detail.data.matieres) ? detail.data.matieres : [];
+    const out: EdHomeworkEntry[] = [];
+    for (const raw of matieres) {
+      const m = asRecord(raw);
+      if (!m) continue;
+      const aFaire = asRecord(m.aFaire);
+      if (!aFaire) continue; // this subject has no homework that day
+      const subjectLabel = str(m.matiere) ?? "Matière";
+      const homeworkId = idOf(aFaire.idDevoir) ?? idOf(m.id);
+      out.push({
+        sourceId: `${date}:${homeworkId ?? subjectLabel}`,
+        dueDate: date,
+        subjectLabel,
+        subjectCode: str(m.codeMatiere),
+        teacher: str(m.nomProf),
+        text: collapseHtml(decodeB64(aFaire.contenu)) ?? `Devoir de ${subjectLabel}`,
+        isTest: truthy(m.interrogation),
+        edDone: truthy(aFaire.effectue),
+        assignedOn: str(aFaire.donneLe),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** Assignments as listed by the summary call — subject and flags only. */
+function summaryEntries(value: unknown, date: string): EdHomeworkEntry[] {
+  if (!Array.isArray(value)) return [];
+  const out: EdHomeworkEntry[] = [];
+  for (const raw of value) {
+    const a = asRecord(raw);
+    const subjectLabel = str(a?.matiere);
+    if (!a || !subjectLabel) continue;
+    out.push({
+      sourceId: `${date}:${idOf(a.idDevoir) ?? subjectLabel}`,
+      dueDate: date,
+      subjectLabel,
+      subjectCode: str(a.codeMatiere),
+      text: `Devoir de ${subjectLabel}`,
+      isTest: truthy(a.interrogation),
+      edDone: truthy(a.effectue),
+      assignedOn: str(a.donneLe),
+    });
+  }
+  return out;
+}
+
+/** EcoleDirecte flags are booleans, 1/0 or "1"/"0". */
+function truthy(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
+/** Base64 HTML → readable plain text (we never render ED markup). */
+function collapseHtml(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+  const text = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#0?39;|&apos;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text.length > 0 ? text.slice(0, 900) : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
